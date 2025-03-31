@@ -1,1 +1,11 @@
 assets/*
+*.ply
+*.txt
+*.png
+*.npy
+*.bin
+*.bag
+*.obj
+*.jpg
+*.mp4
+data/*

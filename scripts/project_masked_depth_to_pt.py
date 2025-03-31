@@ -1,108 +1,88 @@
-import sys
-from matplotlib import pyplot as plt
+# This script takes a video of a mask and a color video, and a raw depth list and outputs
+# a ply point cloud for each frame in the directory it was run in.
+
 import numpy as np
 import cv2
 import open3d as o3d
-import time
+from assets.constants import fx, fy, cx, cy
+from utils.depth_utils import load_raw_depth_images
 
-# RealSense D405 intrinsics (example values, replace with your actual intrinsics)
-fx=641.52124023
-fy=641.52124023
-cx=646.98626709
-cy=362.58349609
-
-# Load the masked depth video
-masked_depth_video_path = "/home/abdullah/utn/phantom-human-videos/assets/masked_depth_output.avi"
-cap_depth = cv2.VideoCapture(masked_depth_video_path)
-
-# Load the corresponding color video
-color_video_path = "/home/abdullah/utn/phantom-human-videos/assets/d405-color_xRPUyima.avi"  # Replace with the actual path to your color video
+# Load the mask video
+# the mask video should be obtained from sam2-sieve=>sam2-video workflow
+mask_video_path = "/home/abdullah/utn/phantom-human2robot/sandbox/output_wf2_mask_video_2025-03-31_14-54-29.mp4"
+cap_mask = cv2.VideoCapture(mask_video_path)
+# Load the corresponding color video --> fetch the compiled video from the sam2-sieve=>sam2-video workflow
+color_video_path = "/home/abdullah/utn/phantom-human2robot/sandbox/color_video_compiled_for_sieve_2025-03-31_14-54-29.mp4"  # Replace with the actual path to your color video
 cap_color = cv2.VideoCapture(color_video_path)
 
+# TODO: match raw depth data with the mask video
+# Load the corresponding raw depth video
+raw_depth_directory_path = "/home/abdullah/utn/phantom-human2robot/playground_sieve_sam_hamer/data/recordings/white_cloth_exp/white_nonreflective_cloth_light_on_ambient_light/depth_raw_npy"
+numpy_depth = load_raw_depth_images(raw_depth_directory_path)
 # Create an initial empty point cloud
 pcd = o3d.geometry.PointCloud()
+i = 0
+
 
 # Process each frame in the video
-frame_count = 0
-while cap_depth.isOpened() and cap_color.isOpened():
-    ret_depth, depth_frame = cap_depth.read()
+while cap_mask.isOpened() and cap_color.isOpened():
+    ret_mask, mask_frame = cap_mask.read()
+    mask_frame = cv2.cvtColor(mask_frame, cv2.COLOR_BGR2GRAY)  # video is in RGB
     ret_color, color_frame = cap_color.read()
-    if not ret_depth or not ret_color:
+    color_frame = cv2.cvtColor(color_frame, cv2.COLOR_BGR2RGB)
+    if not ret_mask or not ret_color:
         break
-    
-    # For simplicity, process every 5th frame to avoid overwhelming the visualization
-    frame_count += 1
-    if frame_count % 5 != 0:
-        continue
-    
-    # Convert to single-channel depth image if it's not already
-    # take only the first channel
-    depth_image = depth_frame # Assuming depth is in the first channel
-    
-    depth_image = depth_image.astype(np.float32) # Normalize depth values to [0, 1] range
-    depth_image = cv2.imread("extracted_frames_color/frame_0060.jpg", cv2.IMREAD_ANYDEPTH)
-    print(f"Depth image shape: {type(depth_image)}")
+    width, height = color_frame.shape[:2]  # (width, height, channels)
+    depth_frame = numpy_depth[i] * 1000  # to mm
+    depth_frame = depth_frame.reshape(width, height)  # convert to 2D
+    depth_original = (
+        depth_frame.copy()
+    )  # create a copy of the original depth frame for visualization
+    depth_frame = np.where(
+        mask_frame != 0, depth_frame, np.nan
+    )  # apply the mask to the depth frame
 
-
-    # Display the depth image statistics
-    print(f"Depth image shape: {depth_image.shape}")
-    print(f"Min depth: {np.min(depth_image)}, Max depth: {np.max(depth_image)}")
-    print(f"Depth mean: {np.mean(depth_image)}, std: {np.std(depth_image)}")
-    
-    # Get the shape of the depth image
-    width, height = depth_image.shape
-    print(f"Depth image size: {width} x {height}")
-    
-    # Set the intrinsic parameters
-    intrinsic = o3d.camera.PinholeCameraIntrinsic()
+    # render the point cloud
+    intrinsic = o3d.camera.PinholeCameraIntrinsic()  # Set the intrinsic parameters
     intrinsic.set_intrinsics(width, height, fx, fy, cx, cy)
-
-    # Create open3d depth image from the current depth image
-    depth_image_o3d = o3d.geometry.Image(depth_image)
-    # transformation_matrix = np.array([
-    #     [0.979678, 0.0693863, 0.188195, 0.232897],
-    #     [0.199876, -0.416175, -0.887044, -0.13983],
-    #     [0.0167736, 0.906633, -0.421586, 0.608288],
-    #     [0, 0, 0, 1]
-    # ])
-    
-    # Resize color frame to match depth frame size
-    color_frame = cv2.imread("extracted_frames/frame_0060.jpg", cv2.IMREAD_UNCHANGED)
-    print(f"Color image shape: {color_frame.shape}")
-    # print|(f"depth image shape: {depth_image.shape}")
-    color_frame_resized = cv2.resize(color_frame, (height, width))
-    pcd.colors = o3d.utility.Vector3dVector(color_frame_resized.reshape(-1, 3) / 255.0)
-    
-    # Convert color frame to open3d image
-    color_image_o3d = o3d.geometry.Image(color_frame_resized)
+    depth_frame_o3d = o3d.geometry.Image(
+        depth_frame
+    )  # Create open3d depth image from the current depth image
+    color_frame_o3d = o3d.geometry.Image(
+        color_frame
+    )  # Convert color frame to open3d image
     rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(
-        color_image_o3d, depth_image_o3d, convert_rgb_to_intensity=False
+        color_frame_o3d, depth_frame_o3d, convert_rgb_to_intensity=False
     )
-    # Assign colors to the point cloud
-    # initialize colors to black
-    pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intrinsic)
-    # # filter the point cloud to remove NaN values
-    # pcd = pcd.select_by_index(np.where(np.isfinite(pcd.points[:, 0]))[0])
-    # remove outliers
-    # pcd, ind = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=1.0)
-    # # remove noise points
-    # pcd = pcd.voxel_down_sample(voxel_size=0.001)
-    # Display the point cloud directly without the need to call update_geometry
-    o3d.visualization.draw_geometries([pcd])
+    pcd = o3d.geometry.PointCloud.create_from_rgbd_image(
+        rgbd, intrinsic, project_valid_depth_only=True
+    )
 
-    # # Optional: Display the depth image for reference
-    # cv2.imshow("Depth Image", depth_image / np.max(depth_image))
-    # # Optional: Display the color image for reference
+    pcd = pcd.select_by_index(np.where(np.asarray(pcd.points)[:, 2] > 0.07)[0])
+    pcd = pcd.select_by_index(np.where(np.asarray(pcd.points)[:, 2] < 0.5)[0])
+
+    # visualize the depth image
+    depth_original = depth_original - np.nanmin(
+        depth_original
+    )  # normalize the depth image first
+    depth_original = depth_original / np.nanmax(depth_original)
+    depth_original = cv2.equalizeHist((depth_original * 255).astype(np.uint8))
+    # cv2.imshow("Depth Image", depth_original)
+
+    # visualize the mask
+    # cv2.imshow("Mask", mask_frame)
+
+    # visualize the color image
+    # color_frame = cv2.cvtColor(color_frame, cv2.COLOR_RGB2BGR)
     # cv2.imshow("Color Image", color_frame)
-    # # Wait for key press
-    # cv2.waitKey(0)    
-    # # Optional: Slee
-    # # p to slow down visualization
-    # time.sleep(0.05)
 
+    # end visualization mechanism
+    # cv2.waitKey(0)
+
+    # save and visualize the point cloud
+    i += 1
+    # o3d.visualization.draw_geometries([pcd])
+    o3d.io.write_point_cloud(f"frame_{i}.ply", pcd)
 # Release the video captures
-cap_depth.release()
+cap_mask.release()
 cap_color.release()
-
-# Keep visualization window open until closed manually
-print("Press 'q' in the visualization window to exit")
