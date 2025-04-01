@@ -1,12 +1,32 @@
 # This script takes a video of a mask and a color video, and a raw depth list and outputs
 # a ply point cloud for each frame in the directory it was run in.
 
+import os
 import numpy as np
 import cv2
 import open3d as o3d
-from assets.constants import fx, fy, cx, cy
-from utils.depth_utils import load_raw_depth_images
 
+
+# from assets.constants import fx, fy, cx, cy
+# from utils.depth_utils import load_raw_depth_images
+def load_raw_depth_images(raw_depth_directory_path):
+    # list all the files in the directory and sort them
+    directory = sorted(
+        [f for f in os.listdir(raw_depth_directory_path) if f.endswith(".npy")]
+    )
+    numpy_depth = []
+    for np_file in directory:
+        numpy_depth.append(np.load(f"{raw_depth_directory_path}/{np_file}"))
+    numpy_depth = np.array(numpy_depth)
+    print(f"Number of files: {len(numpy_depth)}")
+    return numpy_depth
+
+
+# RealSense D405 intrinsics (extracted from realsense tools) (only one available in CSAI in UTN)
+fx = 425.007843017578
+fy = 425.007843017578
+cx = 428.628387451172
+cy = 241.711563110352
 # Load the mask video
 # the mask video should be obtained from sam2-sieve=>sam2-video workflow
 mask_video_path = "/home/abdullah/utn/phantom-human2robot/sandbox/output_wf2_mask_video_2025-03-31_14-54-29.mp4"
@@ -17,11 +37,11 @@ cap_color = cv2.VideoCapture(color_video_path)
 
 # TODO: match raw depth data with the mask video
 # Load the corresponding raw depth video
-raw_depth_directory_path = "/home/abdullah/utn/phantom-human2robot/playground_sieve_sam_hamer/data/recordings/white_cloth_exp/white_nonreflective_cloth_light_on_ambient_light/depth_raw_npy"
+raw_depth_directory_path = "/home/abdullah/utn/phantom-human2robot/assets/data/recordings/white_cloth_exp/white_nonreflective_cloth_light_on_ambient_light/depth_raw_npy"
 numpy_depth = load_raw_depth_images(raw_depth_directory_path)
 # Create an initial empty point cloud
 pcd = o3d.geometry.PointCloud()
-i = 0
+i = -1
 
 
 # Process each frame in the video
@@ -69,19 +89,20 @@ while cap_mask.isOpened() and cap_color.isOpened():
     depth_original = cv2.equalizeHist((depth_original * 255).astype(np.uint8))
     # cv2.imshow("Depth Image", depth_original)
 
-    # visualize the mask
+    # # visualize the mask
     # cv2.imshow("Mask", mask_frame)
 
-    # visualize the color image
+    # # visualize the color image
     # color_frame = cv2.cvtColor(color_frame, cv2.COLOR_RGB2BGR)
     # cv2.imshow("Color Image", color_frame)
 
-    # end visualization mechanism
+    # # end visualization mechanism
     # cv2.waitKey(0)
 
-    # save and visualize the point cloud
-    i += 1
+    # # save and visualize the point cloud
     # o3d.visualization.draw_geometries([pcd])
+
+    i += 1
     o3d.io.write_point_cloud(f"frame_{i}.ply", pcd)
 # Release the video captures
 cap_mask.release()
