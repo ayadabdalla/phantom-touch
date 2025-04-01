@@ -1,3 +1,4 @@
+# data
 assets/*
 *.ply
 *.txt
@@ -9,3 +10,6 @@ assets/*
 *.jpg
 *.mp4
 data/*
+
+# virtual env
+.phantom-touch

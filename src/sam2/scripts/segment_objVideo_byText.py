@@ -1,0 +1,86 @@
+# workflow 2 sam2-sieve=>sam2-videoPredictor
+import sieve
+import cv2
+import os
+import numpy as np
+import torch
+import matplotlib
+import datetime
+import hydra
+import omegaconfig
+from sam2.build_sam import build_sam2_video_predictor
+from sam2.utils import (
+    extract_centroid,
+    save_mp4video,
+    filelist_to_mp4sieve,
+    sievesamzip_to_numpy,
+)
+
+# script metadata
+matplotlib.use("TKAgg")
+now = datetime.datetime.now()
+now = now.strftime("%Y-%m-%d_%H-%M-%S")
+device = "cuda" if torch.cuda.is_available() else "cpu"
+
+# initialize configurations
+hydra.initialize("config", version_base=None)
+cfg = hydra.compose("config/config.yaml")
+sam2_sieve_cfg = cfg.sam2sieve
+
+# First workflow component: SAM2-SIEVE
+sam = sieve.function.get("sieve/text-to-segment")
+input_video = filelist_to_mp4sieve(
+    sam2_sieve_cfg.images_path,
+    # output_path=f"/home/epon04yc/pt_sam_hamer/output_dir/color_video_compiled_for_sieve_{now}.mp4",
+    output_path=sam2_sieve_cfg.output_dir,
+)
+sam_out = sam.run(input_video, sam2_sieve_cfg.text_prompt)
+original_masks = sievesamzip_to_numpy(sam_out)
+
+# integration interface with teh next workflow component: VIDEO-SAM2
+centroids = []
+for mask in original_masks:
+    centroid = extract_centroid(mask)
+    if centroid is not None:
+        centroids.append(centroid)
+centroids = np.array(centroids)
+
+# Second workflow component: VIDEO-SAM2
+sam2video_cfg = cfg.sam2video
+points = np.array(
+    [[centroids[0][0], centroids[0][1]]], dtype=np.float32
+)  # interaction points from previous workflow component
+predictor = build_sam2_video_predictor(
+    sam2video_cfg.model_cfg, sam2video_cfg.sam2_checkpoint, device=device
+)
+frame_names = [
+    p
+    for p in os.listdir(sam2video_cfg.video_frames_dir)
+    if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
+]  # sam2-videoPredictor requires a directory of JPEG frames with filenames like `<frame_index>.jpg`
+frame_names = sorted(frame_names, key=lambda p: os.path.splitext(p)[0])
+inference_state = predictor.init_state(video_path=sam2video_cfg.video_frames_dir)
+predictor.reset_state(inference_state)
+_, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
+    inference_state=inference_state,
+    frame_idx=0, # the first frame
+    obj_id=1, # the object id we are interested in
+    points=points,
+    labels=np.array(
+    [1], np.int32
+)   # here we assume one hand(object) per frame, so we only need one label
+)
+mask_frames = []  # store the masked video for later use
+for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
+    inference_state
+):
+    video_frame = np.zeros(
+        (out_mask_logits.shape[2], out_mask_logits.shape[3], 3), dtype=np.uint8
+    )
+    for i, out_obj_id in enumerate(out_obj_ids):
+        mask = (out_mask_logits[i] > 0.0).cpu().numpy()[0] # squeeze the first dimension
+        mask = cv2.cvtColor(mask.astype(np.uint8) * 255, cv2.COLOR_GRAY2RGB)
+    mask_frames.append(mask)
+mask_frames = np.array(mask_frames)
+output_path = cfg.sam2video.output_dir
+save_mp4video(mask_frames, output_path=output_path)

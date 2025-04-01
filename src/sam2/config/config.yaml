@@ -1,0 +1,13 @@
+metadata:
+  repo_dir: phantom-touch
+  experiment_name: white_cloth_exp
+  experiment_specifics: white_nonreflective_cloth_light_on_ambient_light
+sam2sieve:
+  images_path : ${repo_dir}/data/${experiment_name}/${experiment_specifics}/png_output
+  text_prompt : hand
+  output_dir : ${repo_dir}/data/${experiment_name}/${experiment_specifics}/sieve_output
+sam2-videoPredictor:
+  sam2_checkpoint : ../checkpoints/sam2.1_hiera_large.pt #TODO:: change to the correct path
+  model_cfg : configs/sam2.1/sam2.1_hiera_l.yaml #TODO:: change to the correct path
+  video_frames_dir : ${repo_dir}/data/${experiment_name}/${experiment_specifics}/jpg_frames
+  output_dir : f"/home/epon04yc/pt_sam_hamer/output_dir/output_wf2_mask_video_{now}.mp4"
