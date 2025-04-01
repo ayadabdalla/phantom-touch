@@ -1,7 +1,6 @@
 # data
 assets/*
 *.ply
-*.txt
 *.png
 *.npy
 *.bin
