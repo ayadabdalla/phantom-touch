@@ -1,4 +1,5 @@
-# workflow 2 sam2-sieve=>sam2-videoPredictor
+# workflow 2 sam2-sieve=>sam2-videoPredictor , run in sam2custom package directory
+import sys
 import sieve
 import cv2
 import os
@@ -7,9 +8,9 @@ import torch
 import matplotlib
 import datetime
 import hydra
-import omegaconfig
+from omegaconf import OmegaConf
 from sam2.build_sam import build_sam2_video_predictor
-from sam2.utils import (
+from sam2custom.utils.utils import (
     extract_centroid,
     save_mp4video,
     filelist_to_mp4sieve,
@@ -22,9 +23,18 @@ now = datetime.datetime.now()
 now = now.strftime("%Y-%m-%d_%H-%M-%S")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+def search_folder(start_path, target_folder):
+    for dirpath, dirnames, filenames in os.walk(start_path):
+        if target_folder in dirnames:
+            return os.path.join(dirpath, target_folder)
+    return None
+
 # initialize configurations
-hydra.initialize("config", version_base=None)
-cfg = hydra.compose("config/config.yaml")
+OmegaConf.register_new_resolver(
+    "phantom-touch", lambda: search_folder("/home", "phantom-touch"))
+# get parent directory of the current script
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+cfg = OmegaConf.load(f"{parent_dir}/config/config.yaml")
 sam2_sieve_cfg = cfg.sam2sieve
 
 # First workflow component: SAM2-SIEVE

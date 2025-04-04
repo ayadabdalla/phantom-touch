@@ -10,7 +10,7 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/ayadabdalla/phantom-touch",
     packages=find_packages(where="phantom-touch/src"),
-    package_dir={"": "phantom-touch/src"},
+    package_dir={"": "src"},
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

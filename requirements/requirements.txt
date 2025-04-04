@@ -6,6 +6,7 @@ pathlib
 hamer @ git+ssh://git@github.com/geopavlakos/hamer.git@main#egg=hamer
 # sam2
 hydra-core
+omegaconf
 # os
 # datetime
 # zipfile

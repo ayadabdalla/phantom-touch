@@ -12,3 +12,9 @@ data/*
 
 # virtual env
 .phantom-touch
+
+#env
+*.egg-info
+
+# pyc
+*.pyc
