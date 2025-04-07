@@ -1,5 +1,3 @@
-cython
-xtcocotools
 wheel
 matplotlib
 opencv-python
