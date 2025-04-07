@@ -79,7 +79,7 @@ source .phantom-touch/bin/activate
     ```
 
 ## SIEVE API Setup
-1. Create a free account on [SIEVE](https://www.sieve.com).
+1. Create a free account on [SIEVE](https://www.sievedata.com/)
 2. Export your API key:
     ```bash
     export SIEVE_API_KEY="<your key>"
