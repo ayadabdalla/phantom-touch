@@ -1,13 +1,12 @@
+cython
+xtcocotools
 wheel
 matplotlib
 opencv-python
 sievedata
 pathlib
 hamer @ git+ssh://git@github.com/geopavlakos/hamer.git@main#egg=hamer
-# sam2
+mmpose @ git+ssh://git@github.com/ViTAE-Transformer/ViTPose.git@main
 hydra-core
 omegaconf
-# os
-# datetime
-# zipfile
-# tempfile
+webdataset

@@ -8,7 +8,9 @@ assets/*
 *.obj
 *.jpg
 *.mp4
-data/*
+*.pt
+data
+_DATA
 
 # virtual env
 .phantom-touch

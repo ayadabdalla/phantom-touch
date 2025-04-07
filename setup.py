@@ -9,7 +9,7 @@ setup(
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/ayadabdalla/phantom-touch",
-    packages=find_packages(where="phantom-touch/src"),
+    packages=find_packages(where="phantom-touch"),
     package_dir={"": "src"},
     classifiers=[
         "Programming Language :: Python :: 3",

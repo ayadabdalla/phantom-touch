@@ -58,6 +58,7 @@ def filelist_to_mp4sieve(frames_dir, output_path=None):
         if img.endswith(".png") and img.startswith("png_output_Color")
     ]
     images = sorted(images)
+    print(f"Number of loaded images: {len(images)}")
     first_frame = cv2.imread(os.path.join(frames_dir, images[0]))
     height, width, layers = first_frame.shape
     frame_size = (width, height)
@@ -71,6 +72,7 @@ def filelist_to_mp4sieve(frames_dir, output_path=None):
         frame = cv2.imread(img_path)
         out.write(frame)
     out.release()
+    print(f"Video saved to {output_path}")
     return sieve.File(path=output_path)
 
 
@@ -152,3 +154,8 @@ def show_box(box, ax):
         plt.Rectangle((x0, y0), w, h, edgecolor="green", facecolor=(0, 0, 0, 0), lw=2)
     )
 
+def search_folder(start_path, target_folder):
+    for dirpath, dirnames, filenames in os.walk(start_path):
+        if target_folder in dirnames:
+            return os.path.join(dirpath, target_folder)
+    return None

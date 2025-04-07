@@ -1,4 +1,4 @@
-# workflow 2 sam2-sieve=>sam2-videoPredictor , run in sam2custom package directory
+# workflow 2 sam2-sieve=>sam2-videoPredictor
 import sys
 import sieve
 import cv2
@@ -7,13 +7,13 @@ import numpy as np
 import torch
 import matplotlib
 import datetime
-import hydra
 from omegaconf import OmegaConf
 from sam2.build_sam import build_sam2_video_predictor
-from sam2custom.utils.utils import (
+from utils.sam2utils import (
     extract_centroid,
     save_mp4video,
     filelist_to_mp4sieve,
+    search_folder,
     sievesamzip_to_numpy,
 )
 
@@ -23,26 +23,20 @@ now = datetime.datetime.now()
 now = now.strftime("%Y-%m-%d_%H-%M-%S")
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-def search_folder(start_path, target_folder):
-    for dirpath, dirnames, filenames in os.walk(start_path):
-        if target_folder in dirnames:
-            return os.path.join(dirpath, target_folder)
-    return None
-
 # initialize configurations
 OmegaConf.register_new_resolver(
     "phantom-touch", lambda: search_folder("/home", "phantom-touch"))
 # get parent directory of the current script
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-cfg = OmegaConf.load(f"{parent_dir}/config/config.yaml")
+cfg = OmegaConf.load(f"{parent_dir}/conf/config.yaml")
 sam2_sieve_cfg = cfg.sam2sieve
 
 # First workflow component: SAM2-SIEVE
+video_name=f"color_video_compiled_for_sieve_{now}.mp4"
 sam = sieve.function.get("sieve/text-to-segment")
 input_video = filelist_to_mp4sieve(
     sam2_sieve_cfg.images_path,
-    # output_path=f"/home/epon04yc/pt_sam_hamer/output_dir/color_video_compiled_for_sieve_{now}.mp4",
-    output_path=sam2_sieve_cfg.output_dir,
+    output_path=f"{sam2_sieve_cfg.output_dir}/{video_name}",
 )
 sam_out = sam.run(input_video, sam2_sieve_cfg.text_prompt)
 original_masks = sievesamzip_to_numpy(sam_out)
@@ -56,7 +50,7 @@ for mask in original_masks:
 centroids = np.array(centroids)
 
 # Second workflow component: VIDEO-SAM2
-sam2video_cfg = cfg.sam2video
+sam2video_cfg = cfg.sam2videoPredictor
 points = np.array(
     [[centroids[0][0], centroids[0][1]]], dtype=np.float32
 )  # interaction points from previous workflow component
@@ -92,5 +86,5 @@ for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
         mask = cv2.cvtColor(mask.astype(np.uint8) * 255, cv2.COLOR_GRAY2RGB)
     mask_frames.append(mask)
 mask_frames = np.array(mask_frames)
-output_path = cfg.sam2video.output_dir
+output_path = cfg.sam2videoPredictor.output_dir
 save_mp4video(mask_frames, output_path=output_path)

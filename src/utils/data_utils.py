@@ -1,3 +1,5 @@
+import os
+
 def retrieve_data_sample_path(
     data_source,
     experiment_name,
