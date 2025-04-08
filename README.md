@@ -38,6 +38,10 @@ source .phantom-touch/bin/activate
     ```
     *Note: Ignore any `iopath` conflict.*
 
+6. Install `phantom-touch` in editable mode:
+    ```bash
+    pip install -e .
+    ```
 ## Additional Setup
 1. Download `vitpose_model.py`:
     ```bash
@@ -51,16 +55,13 @@ source .phantom-touch/bin/activate
       **Change**: Replace `getargs` with `getfullargspec`.
 
     - **File**: `.phantom-touch/lib/python3.12/site-packages/sam2/utils/misc.py`  
-      **Function**: `load_video_frames_from_jpg_images`  
+      **Function**: `load_video_frames_from_jpg_images`    
+      **Line**: 246
+      **Change** Add `.png` extension for flexebility: [".jpg", ".jpeg", ".JPG", ".JPEG",".png", ".PNG"]
       **Line**: 248  
       **Change**: Remove `int()` typecasting.
 
-3. Install the package in editable mode:
-    ```bash
-    pip install -e .
-    ```
-
-4. Add `hamer`, `vitpose`, and `mano` checkpoints and models to the `hamer` directory (not inside the virtual environment):
+3. Add `hamer`, `vitpose`, and `mano` checkpoints and models to the `hamer` directory in `phantom-touch` (not inside the virtual environment):
     ```bash
     cd src/hamer
     cp -r /mnt/dataset_drive/ayad/phantom-touch/models/hamer/_DATA/ ./
@@ -85,22 +86,23 @@ source .phantom-touch/bin/activate
     export SIEVE_API_KEY="<your key>"
     ```
 ## Running the Project
-In order to run both sam2 and hamer workflows, all you need is a path of a list of png images in the `sam2sieve.images_path` in the config file in `sam2` directory and a text prompt. First run sam2 workflow, which creates an rgb video as a side product, then extract the jpg frames from it using the script `utils/extract_frames.py` and changing the `video_path` and `output_folder` to the appropriate paths, and run hamer on the `jpg_frames`.
+In order to run both sam2 and hamer workflows, all you need is `sam2sieve.images_path` in the config file in `sam2/conf` directory and a `sam2sieve.text_prompt`. In order to run hamer, all you need is `img_folder` in the config file in `hamer/conf` directory.
+Note: Take note of the paths of final and intermediary outputs, and make sure to have the models checkpoints and config for sam2.
 ### Run SAM2
 1. Adapt the config file input and output paths in `sam2` directory if needed.
-1. Use the `segment_objVideo_by_Text` script available in `sam2/scripts`:
+2. In `phantom-touch`, go to the `sam2` directory:
     ```bash
-    python phantom-touch/src/sam2/scripts/segment_objVideo_by_Text.py
+    cd src/sam2
+3. Adapt the `config` in `conf` to your paths and run:
+    ```bash
+    python scripts/segment_objVideo_by_Text.py
     ```
 ### Run Hamer
 1. In `phantom-touch`, go to the `hamer` directory:
     ```bash
     cd src/hamer
     ```
-2. Adapt the following command to your paths and run:
+2. Adapt the `config` in `conf` to your paths and run:
     ```bash
-    python scripts/segment_hands.py \
-        --img_folder /mnt/dataset_drive/ayad/phantom-touch/data/recordings/white_cloth_exp/white_nonreflective_cloth_light_on_ambient_light/png_output/color_sample/ \
-        --out_folder /mnt/dataset_drive/ayad/phantom-touch/data/output/white_cloth_exp/white_nonreflective_cloth_light_on_ambient_light/hamer_output/ \
-        --checkpoint ~/phantom-touch/src/hamer/_DATA/hamer_ckpts/checkpoints/hamer.ckpt
+    python scripts/segment_hands.py
     ```

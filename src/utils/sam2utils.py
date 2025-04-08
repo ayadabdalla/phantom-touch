@@ -76,17 +76,17 @@ def filelist_to_mp4sieve(frames_dir, output_path=None):
     return sieve.File(path=output_path)
 
 
-def save_mp4video(masks, output_path=None):
+def save_mp4video(masks, output_path=None, video_name="output.mp4"):
     """
     save refined masks in a video
     """
     # save final masks in a video
-    height, width, layers = masks[0].shape
+    width, height, layers = masks[0].shape
     frame_size = (width, height)
     # Define the codec and create VideoWriter object
-    out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, frame_size)
+    out = cv2.VideoWriter(f"{output_path}/{video_name}", cv2.VideoWriter_fourcc(*"mp4v"), 30, frame_size)
     # Loop through the images and write them to the video
-    for mask in masks:
+    for i,mask in enumerate(masks):
         frame = mask
         out.write(frame)
     out.release()

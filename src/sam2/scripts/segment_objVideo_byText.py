@@ -26,6 +26,10 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 # initialize configurations
 OmegaConf.register_new_resolver(
     "phantom-touch", lambda: search_folder("/home", "phantom-touch"))
+# OmegaConf.register_new_resolver(
+#     "now", lambda: now
+# )  # register a new resolver for the current time
+
 # get parent directory of the current script
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 cfg = OmegaConf.load(f"{parent_dir}/conf/config.yaml")
@@ -60,7 +64,7 @@ predictor = build_sam2_video_predictor(
 frame_names = [
     p
     for p in os.listdir(sam2video_cfg.video_frames_dir)
-    if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG"]
+    if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG",".png", ".PNG"]
 ]  # sam2-videoPredictor requires a directory of JPEG frames with filenames like `<frame_index>.jpg`
 frame_names = sorted(frame_names, key=lambda p: os.path.splitext(p)[0])
 inference_state = predictor.init_state(video_path=sam2video_cfg.video_frames_dir)
@@ -87,4 +91,5 @@ for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
     mask_frames.append(mask)
 mask_frames = np.array(mask_frames)
 output_path = cfg.sam2videoPredictor.output_dir
-save_mp4video(mask_frames, output_path=output_path)
+video_name = f"sam2-video-output_{now}.mp4"
+save_mp4video(mask_frames, output_path=output_path, video_name=video_name)

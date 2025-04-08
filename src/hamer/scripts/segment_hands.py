@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 import torch
 import argparse
 import os
@@ -12,23 +13,22 @@ from hamer.utils.renderer import Renderer, cam_crop_to_full
 from hamer.vitpose_model import ViTPoseModel
 import json
 from typing import Dict, Optional
+from omegaconf import OmegaConf
+
+from utils.sam2utils import search_folder
 
 LIGHT_BLUE=(0.65098039,  0.74117647,  0.85882353)
 
 def main():
-    parser = argparse.ArgumentParser(description='HaMeR demo code')
-    parser.add_argument('--checkpoint', type=str, default=DEFAULT_CHECKPOINT, help='Path to pretrained model checkpoint')
-    parser.add_argument('--img_folder', type=str, default='images', help='Folder with input images')
-    parser.add_argument('--out_folder', type=str, default='out_demo', help='Output folder to save rendered results')
-    parser.add_argument('--side_view', dest='side_view', action='store_true', default=False, help='If set, render side view also')
-    parser.add_argument('--full_frame', dest='full_frame', action='store_true', default=True, help='If set, render all people together also')
-    parser.add_argument('--save_mesh', dest='save_mesh', action='store_true', default=False, help='If set, save meshes to disk also')
-    parser.add_argument('--batch_size', type=int, default=1, help='Batch size for inference/fitting')
-    parser.add_argument('--rescale_factor', type=float, default=2.0, help='Factor for padding the bbox')
-    parser.add_argument('--body_detector', type=str, default='vitdet', choices=['vitdet', 'regnety'], help='Using regnety improves runtime and reduces memory')
-    parser.add_argument('--file_type', nargs='+', default=['*.jpg', '*.png'], help='List of file extensions to consider')
-
-    args = parser.parse_args()
+    # take the arguments from a yaml config file using OmegaConf
+    user = os.getenv('USER')
+    repo_dir = search_folder(f"/home/{user}/","phantom-touch")
+    config = OmegaConf.load(f'{repo_dir}/src/hamer/conf/config.yaml')
+    args = OmegaConf.to_container(config, resolve=True)
+    args = OmegaConf.create(args)
+    args.img_folder = os.path.expanduser(args.img_folder)
+    args.out_folder = os.path.expanduser(args.out_folder)
+    args.checkpoint = os.path.expanduser(args.checkpoint)
 
     model, model_cfg = load_hamer(args.checkpoint)
 
