@@ -1,0 +1,3 @@
+mask_video_path: "/home/abdullah/utn/phantom-touch/sandbox/output_wf2_mask_video_2025-03-31_14-54-29.mp4"
+color_video_path: "/home/abdullah/utn/phantom-touch/sandbox/color_video_compiled_for_sieve_2025-03-31_14-54-29.mp4"
+raw_depth_directory_path: "/home/abdullah/utn/phantom-touch/assets/data/recordings/white_cloth_exp/white_nonreflective_cloth_light_on_ambient_light/depth_raw_npy"

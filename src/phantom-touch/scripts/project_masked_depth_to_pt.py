@@ -2,56 +2,45 @@
 # a ply point cloud for each frame in the directory it was run in.
 
 import os
+import sys
 import numpy as np
 import cv2
 import open3d as o3d
 
 
-# from assets.constants import fx, fy, cx, cy
-# from utils.depth_utils import load_raw_depth_images
-def load_raw_depth_images(raw_depth_directory_path):
-    # list all the files in the directory and sort them
-    directory = sorted(
-        [f for f in os.listdir(raw_depth_directory_path) if f.endswith(".npy")]
-    )
-    numpy_depth = []
-    for np_file in directory:
-        numpy_depth.append(np.load(f"{raw_depth_directory_path}/{np_file}"))
-    numpy_depth = np.array(numpy_depth)
-    print(f"Number of files: {len(numpy_depth)}")
-    return numpy_depth
+from utils.hw_camera import fx, fy, cx, cy
+from utils.depth_utils import load_raw_depth_images
+from omegaconf import OmegaConf
+from utils.rgb_utils import fetch_rgb_video
 
+# get script directory
+script_dir = os.path.dirname(os.path.abspath(__file__))
+config = OmegaConf.load(f"{script_dir}/conf/config.yaml")
 
-# RealSense D405 intrinsics (extracted from realsense tools) (only one available in CSAI in UTN)
-fx = 425.007843017578
-fy = 425.007843017578
-cx = 428.628387451172
-cy = 241.711563110352
 # Load the mask video
 # the mask video should be obtained from sam2-sieve=>sam2-video workflow
-mask_video_path = "/home/abdullah/utn/phantom-human2robot/sandbox/output_wf2_mask_video_2025-03-31_14-54-29.mp4"
-cap_mask = cv2.VideoCapture(mask_video_path)
-# Load the corresponding color video --> fetch the compiled video from the sam2-sieve=>sam2-video workflow
-color_video_path = "/home/abdullah/utn/phantom-human2robot/sandbox/color_video_compiled_for_sieve_2025-03-31_14-54-29.mp4"  # Replace with the actual path to your color video
-cap_color = cv2.VideoCapture(color_video_path)
+cap_mask = fetch_rgb_video(config.mask_video_path)
 
-# TODO: match raw depth data with the mask video
-# Load the corresponding raw depth video
-raw_depth_directory_path = "/home/abdullah/utn/phantom-human2robot/assets/data/recordings/white_cloth_exp/white_nonreflective_cloth_light_on_ambient_light/depth_raw_npy"
-numpy_depth = load_raw_depth_images(raw_depth_directory_path)
+# Load the corresponding color video --> fetch the compiled video from the sam2-sieve=>sam2-video workflow
+color_video_path = config.color_video_path
+cap_color = fetch_rgb_video(color_video_path)
+
+#load the raw depth images
+numpy_depth = load_raw_depth_images(config.raw_depth_directory_path)
 # Create an initial empty point cloud
 pcd = o3d.geometry.PointCloud()
 i = -1
-
-
 # Process each frame in the video
 while cap_mask.isOpened() and cap_color.isOpened():
     ret_mask, mask_frame = cap_mask.read()
     mask_frame = cv2.cvtColor(mask_frame, cv2.COLOR_BGR2GRAY)  # video is in RGB
+
     ret_color, color_frame = cap_color.read()
     color_frame = cv2.cvtColor(color_frame, cv2.COLOR_BGR2RGB)
+
     if not ret_mask or not ret_color:
         break
+
     width, height = color_frame.shape[:2]  # (width, height, channels)
     depth_frame = numpy_depth[i] * 1000  # to mm
     depth_frame = depth_frame.reshape(width, height)  # convert to 2D
@@ -100,7 +89,7 @@ while cap_mask.isOpened() and cap_color.isOpened():
     # cv2.waitKey(0)
 
     # # save and visualize the point cloud
-    # o3d.visualization.draw_geometries([pcd])
+    o3d.visualization.draw_geometries([pcd])
 
     i += 1
     o3d.io.write_point_cloud(f"frame_{i}.ply", pcd)
