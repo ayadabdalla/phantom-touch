@@ -106,3 +106,65 @@ Note: Take note of the paths of final and intermediary outputs, and make sure to
     ```bash
     python scripts/segment_hands.py
     ```
+
+## Collecting Data from Orbbec RGB-D Camera
+
+To collect RGB, depth, raw depth, and point cloud aligned data from the Orbbec RGB-D camera, follow these steps.  
+*Note: Change the number of iterations to the desired frame number (TODO: set in config).*
+
+*Note: Use high speed usb-c to usb-c short cable for the camera*
+
+
+### Method 1: Build and Run Orbbec (currently private)
+
+1.    Clone the Orbbec repository and build the `OBSaveToDisk` executable:
+
+        ```bash
+        git clone git@github.com:ayadabdalla/Orbbec.git
+        cd Orbbec
+        mkdir build
+        cd build
+        cmake ..
+        cmake --build . --target OBSaveToDisk
+        ```
+2. Create a directory for your experiment, then run the executable:
+
+    ```bash
+    mkdir <experiment_path>
+    cd <experiment_path>
+    ./<relative path to build/bin>/OBSaveToDisk
+    ```
+3.    Wait for frame initialization then press `r`
+### Method 2: Replacing saveToDisk.cpp using OrbbecSDK
+
+1. Clone the OrbbecSDK Repository
+
+    ```bash
+
+    git clone https://github.com/orbbec/OrbbecSDK.git
+    ```
+2. Locate and Replace File
+
+    Find the `saveToDisk.cpp` file in `src/cameras/Orbbec` of your current project.
+
+    Replace the `saveToDisk.cpp` file in the `examples` directory of OrbbecSDK with the one from your project.
+
+3. Build the Executable
+
+    Follow the same build instructions as in Method 1:
+
+    ```bash
+    cd OrbbecSDK
+    mkdir build
+    cd build
+    cmake ..
+    cmake --build . --target OBSaveToDisk
+    ```
+4. Create a directory for your experiment, then run the executable:
+
+    ```bash
+    mkdir <experiment_path>
+    cd <experiment_path>
+    ./<relative path to build/bin>/OBSaveToDisk
+    ```
+5.    Wait for frame initialization then press `r`
