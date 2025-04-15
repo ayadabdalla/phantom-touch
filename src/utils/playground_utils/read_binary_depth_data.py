@@ -1,16 +1,16 @@
 import numpy as np
 
 # Specify the file path
-file_path = '/home/abdullah/utn/phantom-human2robot/playground/data/depth_only_output/_Depth_1742901201340.73510742187500.bin'
+file_path = '/mnt/dataset_drive/ayad/phantom-touch/data/recordings/handover_experiment_1/RawDepth_8682390ms_e00017_00068.raw'
 
 # Define the dimensions of your depth matrix
 # You need to know these in advance or infer them from the file size
-height = 480  # Example height
-width = 848   # Example width
+height = 632  # Example height
+width = 1000   # Example width
 
 # Define the data type of the depth values
 # Common types for depth data are np.float32 or np.uint16
-data_type = np.float32
+data_type = np.uint16
 
 # Read the binary file
 depth_matrix = np.fromfile(file_path, dtype=data_type)

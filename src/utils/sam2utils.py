@@ -50,12 +50,12 @@ def sievesamzip_to_numpy(sam_out):
     return original_masks
 
 
-def filelist_to_mp4sieve(frames_dir, output_path=None):
+def filelist_to_mp4sieve(frames_dir, prefix, output_path=None):
     # convert list of images to mp4
     images = [
         img
         for img in os.listdir(frames_dir)
-        if img.endswith(".png") and img.startswith("png_output_Color")
+        if img.endswith(".png") and img.startswith(prefix)
     ]
     images = sorted(images)
     print(f"Number of loaded images: {len(images)}")
@@ -80,6 +80,9 @@ def save_mp4video(masks, output_path=None, video_name="output.mp4"):
     """
     save refined masks in a video
     """
+    # make directory if it does not exist
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
     # save final masks in a video
     width, height, layers = masks[0].shape
     frame_size = (width, height)
@@ -88,6 +91,7 @@ def save_mp4video(masks, output_path=None, video_name="output.mp4"):
     # Loop through the images and write them to the video
     for i,mask in enumerate(masks):
         frame = mask
+        print(f"frame shape: {frame.shape}")
         out.write(frame)
     out.release()
 
@@ -100,6 +104,8 @@ def extract_centroid(mask):
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     # Find the largest contour
+    if not contours:
+        return None
     largest_contour = max(contours, key=cv2.contourArea)
 
     # Calculate the centroid

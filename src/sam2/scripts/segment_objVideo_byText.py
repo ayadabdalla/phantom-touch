@@ -38,13 +38,14 @@ sam2_sieve_cfg = cfg.sam2sieve
 # First workflow component: SAM2-SIEVE
 video_name=f"color_video_compiled_for_sieve_{now}.mp4"
 sam = sieve.function.get("sieve/text-to-segment")
+print(sam2_sieve_cfg.images_path)
 input_video = filelist_to_mp4sieve(
     sam2_sieve_cfg.images_path,
+    prefix="Color_",
     output_path=f"{sam2_sieve_cfg.output_dir}/{video_name}",
 )
 sam_out = sam.run(input_video, sam2_sieve_cfg.text_prompt)
 original_masks = sievesamzip_to_numpy(sam_out)
-
 # integration interface with teh next workflow component: VIDEO-SAM2
 centroids = []
 for mask in original_masks:
@@ -90,6 +91,12 @@ for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
         mask = cv2.cvtColor(mask.astype(np.uint8) * 255, cv2.COLOR_GRAY2RGB)
     mask_frames.append(mask)
 mask_frames = np.array(mask_frames)
+# display the frames one by one
+for i in range(mask_frames.shape[0]):
+    cv2.imshow("mask", mask_frames[i])
+    cv2.waitKey(1)
 output_path = cfg.sam2videoPredictor.output_dir
-video_name = f"sam2-video-output_{now}.mp4"
-save_mp4video(mask_frames, output_path=output_path, video_name=video_name)
+# save each frame as a separate image
+for i in range(mask_frames.shape[0]):
+    frame_name = os.path.join(output_path, f"frame_{i:04d}.jpg")
+    cv2.imwrite(frame_name, mask_frames[i])

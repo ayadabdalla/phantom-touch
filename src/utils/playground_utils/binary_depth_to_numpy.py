@@ -1,7 +1,8 @@
 import os
+import sys
 import numpy as np
 
-def extract_binary_files(directory, output_directory=None):
+def extract_binary_files(suffix,directory, output_directory=None, shape=None):
     """
     Sequentially extract binary files from a specified directory.
     
@@ -26,7 +27,7 @@ def extract_binary_files(directory, output_directory=None):
     
     # Get all .bin files and sort them 
     # (assuming you want to process files in a consistent order)
-    bin_files = sorted([f for f in os.listdir(directory) if f.endswith('.bin')])
+    bin_files = sorted([f for f in os.listdir(directory) if f.endswith(f'.{suffix}')])
     
     extracted_files = []
     
@@ -38,7 +39,7 @@ def extract_binary_files(directory, output_directory=None):
             # Read the binary file
             with open(file_path, 'rb') as f:
                 # Read the entire file content
-                data = np.fromfile(f, dtype=np.float32)
+                data = np.fromfile(f, dtype=np.uint16)
                 
                 # Example: Reshape data if it's a depth image (adjust as needed)
                 # Assumes a specific dimension - you might need to modify this
@@ -46,11 +47,14 @@ def extract_binary_files(directory, output_directory=None):
                 try:
                     # Attempt to reshape to a square image (adjust dimensions as needed)
                     # This is a guess - you'll need to modify based on your actual data
+                    # reshaped_data = data.reshape((shape[0], shape[1]))
+                    data = data[:630*630]
                     side_length = int(np.sqrt(len(data)))
                     reshaped_data = data.reshape((side_length, side_length))
                 except ValueError:
                     # If reshaping fails, save as a 1D array
                     reshaped_data = data
+                    print(f"Warning: Could not reshape {file_name}. Data saved as 1D array.")
                 
                 # Create output file path
                 output_file_path = os.path.join(output_directory, f'extracted_{file_name}.npy')
@@ -69,15 +73,15 @@ def extract_binary_files(directory, output_directory=None):
 
 def main():
     # Example usage
-    input_directory = '/home/abdullah/utn/phantom-human2robot/playground_sieve_sam_hamer/data/recordings/white_cloth_exp/white_nonreflective_cloth_light_on_ambient_light/depth_only_output'
-    output_directory = "/home/abdullah/utn/phantom-human2robot/playground_sieve_sam_hamer/data/recordings/white_cloth_exp/white_nonreflective_cloth_light_on_ambient_light/depth_raw_npy"
+    input_directory = "/mnt/dataset_drive/ayad/phantom-touch/data/recordings/test_exp_streaming/e00000"
+    output_directory = "/mnt/dataset_drive/ayad/phantom-touch/data/recordings/test_exp_streaming/e00000"
     try:
         # Extract files
-        extracted_files = extract_binary_files(input_directory, output_directory=output_directory)
+        shape = (630, 630)
+        extracted_files = extract_binary_files("raw",input_directory, output_directory=output_directory,shape=shape)
         
         # Print summary
         print(f"\nExtraction complete. Total files processed: {len(extracted_files)}")
-        print("Extracted files:", extracted_files)
     
     except Exception as e:
         print(f"An error occurred: {e}")

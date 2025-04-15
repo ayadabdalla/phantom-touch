@@ -7,25 +7,27 @@ import open3d as o3d
 # TODO: set up a class that does the downsampling, processing, ICP registration and visualization on top of o3d api
 
 
-data_source = "recordings"
-experiment_name = "white_cloth_exp"
-experiment_specifics = "white_nonreflective_cloth_light_on_ambient_light"
-data_ontology = "hamer_segmented_hands"
-sub_data_sample_id = "0"
-sample_id = "0840"
-data_sample_name = f"frame_{sample_id}_{sub_data_sample_id}"
+data_source = "output"
+experiment_name = "test_exp_streaming"
+# experiment_specifics = "white_nonreflective_cloth_light_on_ambient_light"
+data_ontology = "hamer_output"
+# sub_data_sample_id = "0"
+# sample_id = "0840"
+# data_sample_name = f"frame_{sample_id}_{sub_data_sample_id}"
+data_sample_name = "Color_1920x1080_24931695ms_e00000_00000_0"
 data_extension = "obj"
 repository_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ----------- Load the Mesh and Sample Points from it -----------(hamer)
 # Load the mesh (trimesh supports many formats including .obj)
 mesh_path = os.path.join(
-    repository_root,
-    "assets",
+    "/mnt/dataset_drive/ayad/phantom-touch",
+    # repository_root,
+    # "assets",
     "data",
     data_source,
     experiment_name,
-    experiment_specifics,
+    # experiment_specifics,
     data_ontology,
     f"{data_sample_name}.{data_extension}",
 )
@@ -37,28 +39,38 @@ points = mesh.sample(num_points)
 # Convert the sampled points to an Open3D point cloud.
 pcd_mesh = o3d.geometry.PointCloud()
 pcd_mesh.points = o3d.utility.Vector3dVector(points)
-
+# get number of points in the mesh
+print(f"Number of points in the mesh: {len(np.asarray(pcd_mesh.points))}")
 
 # ----------- Load the Point Cloud from the PLY File -----------(sam2)
-data_ontology = "sam_segmented_hands"
+data_ontology = "sam2-vid_output"
 data_extension = "ply"
-data_sample_name = f"frame_{sample_id}"
+data_sample_name = f"frame_1"
 ply_path = os.path.join(
-    repository_root,
-    "assets",
+    "/mnt/dataset_drive/ayad/phantom-touch",
+    # repository_root,
+    # "assets",
     "data",
     data_source,
     experiment_name,
-    experiment_specifics,
+    # experiment_specifics,
     data_ontology,
     f"{data_sample_name}.{data_extension}",
 )
 print(f"Loading PLY file from: {ply_path}")
-sys.exit()
 pcd_ply = o3d.io.read_point_cloud(ply_path)
+print(f"Number of points in the PLY file: {len(np.asarray(pcd_ply.points))}")
 # ----------- Optional: Downsample for Faster ICP -----------
 voxel_size = 0.005  # Adjust voxel size as needed
-target = pcd_mesh_down = pcd_mesh.voxel_down_sample(voxel_size)
+# filter the point clouds for noisy points and outliers
+pcd_mesh_filtered = pcd_mesh.remove_radius_outlier(
+    nb_points=16, radius=0.05
+)[0]  # remove points that are too far from the rest of the points
+pcd_mesh_filtered = pcd_mesh_filtered.remove_statistical_outlier(
+    nb_neighbors=20, std_ratio=2.0
+)[0]  # remove points that are too far from the rest of the points
+
+target = pcd_mesh_down = pcd_mesh_filtered.voxel_down_sample(voxel_size)
 source = pcd_ply_down = pcd_ply.voxel_down_sample(voxel_size)
 
 
