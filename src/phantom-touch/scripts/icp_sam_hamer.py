@@ -8,8 +8,29 @@ from omegaconf import OmegaConf
 # TODO: set up a class that does the downsampling, processing, ICP registration and visualization on top of o3d api
 
 # data_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-conf = OmegaConf.load("conf/config.yaml")
+# get parent directory of the current file
+parent_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+conf = OmegaConf.load(f"{parent_directory}/conf/icp.yaml")
 data_root = conf.data_root
+def print_stats(pcd):
+    print(
+        "X-axis: ",
+        np.min(np.asarray(pcd.points)[:, 0]),
+        np.max(np.asarray(pcd.points)[:, 0]),
+        np.mean(np.asarray(pcd.points)[:, 0]),
+    )
+    print(
+        "Y-axis: ",
+        np.min(np.asarray(pcd.points)[:, 1]),
+        np.max(np.asarray(pcd.points)[:, 1]),
+        np.mean(np.asarray(pcd.points)[:, 1]),
+    )
+    print(
+        "Z-axis: ",
+        np.min(np.asarray(pcd.points)[:, 2]),
+        np.max(np.asarray(pcd.points)[:, 2]),
+        np.mean(np.asarray(pcd.points)[:, 2]),
+    )
 
 # ----------- Load the Mesh and Sample Points from it -----------(hamer)
 # Load the mesh (trimesh supports many formats including .obj)
@@ -34,8 +55,8 @@ print(f"Number of points in the mesh: {len(np.asarray(pcd_hamer.points))}")
 pcd_sam2_path = os.path.join(
     data_root,
     conf.experiment_name,
-    conf.pcd_sam.data_ontology,
-    f"{conf.pcd_sam.data_sample_name}.{conf.pcd_sam.data_extension}",
+    conf.pcd_sam2.data_ontology,
+    f"{conf.pcd_sam2.data_sample_name}.{conf.pcd_sam2.data_extension}",
 )
 print(f"Loading PLY file from: {pcd_sam2_path}")
 pcd_sam2 = o3d.io.read_point_cloud(pcd_sam2_path)
@@ -47,6 +68,8 @@ voxel_size = 0.005  # Adjust voxel size as needed
 target = pcd_hamer_down = pcd_hamer.voxel_down_sample(voxel_size)
 source = pcd_sam2_down = pcd_sam2.voxel_down_sample(voxel_size)
 
+# print the number of points in the downsampled point cloud
+print(f"Number of points in the downsampled PLY file: {len(np.asarray(pcd_sam2_down.points))}")
 
 # ----------- Preprocess the Point Clouds -----------
 # Center the point clouds around the origin
@@ -86,7 +109,7 @@ print("ICP Transformation Matrix:")
 # ----------- Visualize the Result -----------
 # For visualization, color the two point clouds differently.
 pcd_hamer_down.paint_uniform_color([1, 0, 0])  # Red for the mesh-derived points
-pcd_sam2_down.paint_uniform_color([0, 1, 0])  # Green for the PLY point cloud
+# pcd_sam2_down.paint_uniform_color([0, 1, 0])  # Green for the PLY point cloud
 
 # # Transform the mesh point cloud with the ICP result.
 print(reg_p2l.transformation)
@@ -94,25 +117,6 @@ pcd_sam2_down.transform(reg_p2l.transformation)
 
 # get the statistical details of each axis of each point cloud, min, max and mean
 print("hamer Point Cloud:")
-def print_stats(pcd):
-    print(
-        "X-axis: ",
-        np.min(np.asarray(pcd.points)[:, 0]),
-        np.max(np.asarray(pcd.points)[:, 0]),
-        np.mean(np.asarray(pcd.points)[:, 0]),
-    )
-    print(
-        "Y-axis: ",
-        np.min(np.asarray(pcd.points)[:, 1]),
-        np.max(np.asarray(pcd.points)[:, 1]),
-        np.mean(np.asarray(pcd.points)[:, 1]),
-    )
-    print(
-        "Z-axis: ",
-        np.min(np.asarray(pcd.points)[:, 2]),
-        np.max(np.asarray(pcd.points)[:, 2]),
-        np.mean(np.asarray(pcd.points)[:, 2]),
-    )
 print_stats(pcd_hamer_down)
 print("sam2 Point Cloud:")
 print_stats(pcd_sam2_down)

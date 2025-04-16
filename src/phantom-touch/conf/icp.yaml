@@ -1,12 +1,12 @@
 # conf/config.yaml
 experiment_name: test_exp_streaming
-data_root: "/mnt/dataset_drive/ayad/phantom-touch/data/output"
+data_root: "/home/abdullah/utn/robotics/cameras/data/output"
 pcd_hamer:
   data_ontology: hamer_output
-  data_sample_name: "frame_0840_0"
+  data_sample_name: "Color_1920x1080_24932889ms_e00000_00018_0"
   data_extension: obj
 
 pcd_sam2:
   data_ontology: sam2-vid_output
-  data_sample_name: frame_1
+  data_sample_name: frame_18
   data_extension: ply

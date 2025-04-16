@@ -45,12 +45,11 @@ def extract_binary_files(suffix,directory, output_directory=None, shape=None):
                 # Assumes a specific dimension - you might need to modify this
                 # based on your specific binary file structure
                 try:
-                    # Attempt to reshape to a square image (adjust dimensions as needed)
-                    # This is a guess - you'll need to modify based on your actual data
-                    # reshaped_data = data.reshape((shape[0], shape[1]))
                     data = data[:630*630]
+                    # data = data[630*630:]
                     side_length = int(np.sqrt(len(data)))
                     reshaped_data = data.reshape((side_length, side_length))
+                    # reshaped_data = data.reshape(1920, 1080)
                 except ValueError:
                     # If reshaping fails, save as a 1D array
                     reshaped_data = data
@@ -73,8 +72,9 @@ def extract_binary_files(suffix,directory, output_directory=None, shape=None):
 
 def main():
     # Example usage
-    input_directory = "/mnt/dataset_drive/ayad/phantom-touch/data/recordings/test_exp_streaming/e00000"
-    output_directory = "/mnt/dataset_drive/ayad/phantom-touch/data/recordings/test_exp_streaming/e00000"
+    data_directory = "/home/abdullah/utn/robotics/cameras/data"
+    input_directory = f"{data_directory}/recordings/test_exp_streaming"
+    output_directory = f"{data_directory}/recordings/test_exp_streaming"
     try:
         # Extract files
         shape = (630, 630)
