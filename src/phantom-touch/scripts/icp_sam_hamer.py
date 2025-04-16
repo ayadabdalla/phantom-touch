@@ -95,6 +95,7 @@ threshold = 0.05
 # Use an identity matrix as the initial transformation estimate.
 trans_init = np.eye(4)
 
+
 # # Perform point-to-point ICP registration.
 reg_p2l = o3d.pipelines.registration.registration_icp(
     source,
@@ -122,3 +123,5 @@ print("sam2 Point Cloud:")
 print_stats(pcd_sam2_down)
 # # Visualize the transformed point cloud
 o3d.visualization.draw_geometries([pcd_hamer_down, pcd_sam2_down])
+# visualize the 3D coordinate system
+o3d.visualization.draw_geometries([pcd_hamer_down, pcd_sam2_down, o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)])

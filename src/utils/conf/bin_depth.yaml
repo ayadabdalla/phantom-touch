@@ -1,0 +1,5 @@
+data_directory : "/home/abdullah/utn/robotics/cameras/data/recordings"
+experiment_name : "handover_experiment_1" # Name of the experiment
+input_directory : "${data_directory}/${experiment_name}"
+output_directory : "${data_directory}/${experiment_name}"
+shape : [632, 1000]

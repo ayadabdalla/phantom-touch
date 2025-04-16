@@ -1,6 +1,6 @@
 import os
-import sys
 import numpy as np
+from omegaconf import OmegaConf
 
 def extract_binary_files(suffix,directory, output_directory=None, shape=None):
     """
@@ -14,7 +14,7 @@ def extract_binary_files(suffix,directory, output_directory=None, shape=None):
     Returns:
         list: List of extracted file paths
     """
-    # Ensure the directory exists
+    # # Ensure the directory exists
     if not os.path.isdir(directory):
         raise ValueError(f"Directory {directory} does not exist.")
     
@@ -45,11 +45,8 @@ def extract_binary_files(suffix,directory, output_directory=None, shape=None):
                 # Assumes a specific dimension - you might need to modify this
                 # based on your specific binary file structure
                 try:
-                    data = data[:630*630]
-                    # data = data[630*630:]
-                    side_length = int(np.sqrt(len(data)))
-                    reshaped_data = data.reshape((side_length, side_length))
-                    # reshaped_data = data.reshape(1920, 1080)
+                    data = data[:shape[0]*shape[1]]
+                    reshaped_data = data.reshape(shape[0], shape[1])
                 except ValueError:
                     # If reshaping fails, save as a 1D array
                     reshaped_data = data
@@ -71,13 +68,14 @@ def extract_binary_files(suffix,directory, output_directory=None, shape=None):
     return extracted_files
 
 def main():
-    # Example usage
-    data_directory = "/home/abdullah/utn/robotics/cameras/data"
-    input_directory = f"{data_directory}/recordings/test_exp_streaming"
-    output_directory = f"{data_directory}/recordings/test_exp_streaming"
+    #load config file using OmegaConf
+    parent_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    conf = OmegaConf.load(f"{parent_directory}/utils/conf/bin_depth.yaml")
+    input_directory = conf.input_directory
+    output_directory = conf.output_directory
+    shape = conf.shape
     try:
         # Extract files
-        shape = (630, 630)
         extracted_files = extract_binary_files("raw",input_directory, output_directory=output_directory,shape=shape)
         
         # Print summary

@@ -1,5 +1,4 @@
 import os
-import sys
 import numpy as np
 import cv2
 import open3d as o3d
@@ -11,22 +10,28 @@ from utils.rgb_utils import load_rgb_images
 
 # get script metadata
 script_dir = os.path.dirname(os.path.abspath(__file__))
-config = OmegaConf.load(f"{script_dir}/../../sam2/conf/config.yaml")
-rgb_directory_path = config.sam2videoPredictor.video_frames_dir
-masks_directory_path = config.sam2videoPredictor.output_dir
-output_directory_path = config.sam2videoPredictor.output_dir
+sam2config = OmegaConf.load(f"{script_dir}/../../sam2/conf/config.yaml")
+rgb_directory_path = sam2config.sam2videoPredictor.video_frames_dir
+masks_directory_path = sam2config.sam2videoPredictor.output_dir
+output_directory_path = sam2config.sam2videoPredictor.output_dir
+parent_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+conf = OmegaConf.load(f"{parent_directory}/conf/3d_projection.yaml")
 
 ### Load the data
 # load the color images
 numpy_color = load_rgb_images(rgb_directory_path, prefix="Color_")
 #load the raw depth images
-numpy_depth = load_raw_depth_images(config.sam2videoPredictor.video_frames_dir)
+numpy_depth = load_raw_depth_images(sam2config.sam2videoPredictor.video_frames_dir)
 
 numpy_depth.reshape(
 numpy_depth.shape[0], numpy_color.shape[1] ,numpy_color.shape[2])
 
 # load the masks
 numpy_masks = load_rgb_images(masks_directory_path, prefix="frame_")
+# display all shapes
+print(f"Depth shape: {numpy_depth.shape}")
+print(f"Color shape: {numpy_color.shape}")
+print(f"Mask shape: {numpy_masks.shape}")
 # assert that numpy_masks and numpy_color have the same number of frames
 assert numpy_masks.shape[0] == numpy_color.shape[0], "Number of frames in masks and color images do not match"
 # assert that numpy_masks and numpy_depth have the same number of frames
@@ -44,16 +49,16 @@ for depth_frame, color_frame, mask_frame in zip(numpy_depth, numpy_color, numpy_
     depth_original = (
         depth_frame.copy()
     )  # create a copy of the original depth frame for visualization
+        # reverse the depth frame dimensions
     # convert the depth frame from numpy.float16 to float
     depth_frame = np.where(
         mask_frame != 0, depth_frame, np.nan
     )  # apply the mask to the depth frame
     depth_frame = depth_frame.astype(np.uint16)
-
     # render the point cloud
     intrinsic = o3d.camera.PinholeCameraIntrinsic()  # Set the intrinsic parameters
-    start_x=418
-    start_y=148
+    start_x=conf.crop.x
+    start_y=conf.crop.y
     intrinsic.set_intrinsics(width, height, int(fx), int(fy), int(cx-start_x), int(cy-start_y))
     depth_frame_o3d = o3d.geometry.Image(
         depth_frame

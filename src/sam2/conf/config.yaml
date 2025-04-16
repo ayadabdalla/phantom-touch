@@ -2,7 +2,7 @@ metadata:
   repo_dir: ${phantom-touch:}
   data_dir: /home/abdullah/utn/robotics/cameras/
   model_dir: /mnt/dataset_drive/ayad/phantom-touch
-  experiment_name: test_exp_streaming # Name of the experiment
+  experiment_name: handover_experiment_1 # Name of the experiment
   # experiment_specifics: white_nonreflective_cloth_light_on_ambient_light
 sam2sieve:
   # images_path : ${metadata.data_dir}/data/recordings/${metadata.experiment_name}/${metadata.experiment_specifics}/png_output/color_sample

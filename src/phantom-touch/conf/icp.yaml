@@ -1,5 +1,5 @@
 # conf/config.yaml
-experiment_name: test_exp_streaming
+experiment_name: handover_experiment_1
 data_root: "/home/abdullah/utn/robotics/cameras/data/output"
 pcd_hamer:
   data_ontology: hamer_output

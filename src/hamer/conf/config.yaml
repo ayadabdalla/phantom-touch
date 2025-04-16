@@ -1,4 +1,4 @@
-experiment_name: test_exp_streaming # Name of the experiment
+experiment_name: handover_experiment_1 # Name of the experiment
 checkpoint: ~/phantom-touch/src/hamer/_DATA/hamer_ckpts/checkpoints/hamer.ckpt # Path to pretrained model checkpoint
 img_folder: /mnt/dataset_drive/ayad/phantom-touch/data/recordings/${experiment_name}/e00000 # Folder with input images
 out_folder: /mnt/dataset_drive/ayad/phantom-touch/data/output/${experiment_name}/hamer_output # Output folder to save rendered results
