@@ -1,6 +1,6 @@
-experiment_name: handover_experiment_1 # Name of the experiment
+experiment_name: handover_collection_1/sample # Name of the experiment
 checkpoint: ~/phantom-touch/src/hamer/_DATA/hamer_ckpts/checkpoints/hamer.ckpt # Path to pretrained model checkpoint
-img_folder: /mnt/dataset_drive/ayad/phantom-touch/data/recordings/${experiment_name}/e00000 # Folder with input images
+img_folder: /mnt/dataset_drive/ayad/phantom-touch/data/recordings/${experiment_name} # Folder with input images
 out_folder: /mnt/dataset_drive/ayad/phantom-touch/data/output/${experiment_name}/hamer_output # Output folder to save rendered results
 side_view: true # If set to true, render side view also
 full_frame: true # If set to true, render all people together also

@@ -31,6 +31,7 @@ def main():
     args.checkpoint = os.path.expanduser(args.checkpoint)
 
     model, model_cfg = load_hamer(args.checkpoint)
+    os.makedirs(args.out_folder, exist_ok=True)
 
     # Setup HaMeR model
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
@@ -127,7 +128,6 @@ def main():
             batch = recursive_to(batch, device)
             with torch.no_grad():
                 out = model(batch)
-
             multiplier = (2*batch['right']-1)
             pred_cam = out['pred_cam']
             pred_cam[:,1] = multiplier*pred_cam[:,1]
@@ -183,21 +183,21 @@ def main():
                     tmesh = renderer.vertices_to_trimesh(verts, camera_translation, LIGHT_BLUE, is_right=is_right)
                     tmesh.export(os.path.join(args.out_folder, f'{img_fn}_{person_id}.obj'))
 
-        # Render front view
-        if args.full_frame and len(all_verts) > 0:
-            misc_args = dict(
-                mesh_base_color=LIGHT_BLUE,
-                scene_bg_color=(1, 1, 1),
-                focal_length=scaled_focal_length,
-            )
-            cam_view = renderer.render_rgba_multiple(all_verts, cam_t=all_cam_t, render_res=img_size[n], is_right=all_right, **misc_args)
+        # # Render front view
+        # if args.full_frame and len(all_verts) > 0:
+        #     misc_args = dict(
+        #         mesh_base_color=LIGHT_BLUE,
+        #         scene_bg_color=(1, 1, 1),
+        #         focal_length=scaled_focal_length,
+        #     )
+        #     cam_view = renderer.render_rgba_multiple(all_verts, cam_t=all_cam_t, render_res=img_size[n], is_right=all_right, **misc_args)
 
-            # Overlay image
-            input_img = img_cv2.astype(np.float32)[:,:,::-1]/255.0
-            input_img = np.concatenate([input_img, np.ones_like(input_img[:,:,:1])], axis=2) # Add alpha channel
-            input_img_overlay = input_img[:,:,:3] * (1-cam_view[:,:,3:]) + cam_view[:,:,:3] * cam_view[:,:,3:]
+        #     # Overlay image
+        #     input_img = img_cv2.astype(np.float32)[:,:,::-1]/255.0
+        #     input_img = np.concatenate([input_img, np.ones_like(input_img[:,:,:1])], axis=2) # Add alpha channel
+        #     input_img_overlay = input_img[:,:,:3] * (1-cam_view[:,:,3:]) + cam_view[:,:,:3] * cam_view[:,:,3:]
 
-            cv2.imwrite(os.path.join(args.out_folder, f'{img_fn}_all.jpg'), 255*input_img_overlay[:, :, ::-1])
+        #     cv2.imwrite(os.path.join(args.out_folder, f'{img_fn}_all.jpg'), 255*input_img_overlay[:, :, ::-1])
 
 if __name__ == '__main__':
     main()

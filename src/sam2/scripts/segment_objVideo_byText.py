@@ -26,15 +26,16 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 # initialize configurations
 OmegaConf.register_new_resolver(
     "phantom-touch", lambda: search_folder("/home", "phantom-touch"))
-# OmegaConf.register_new_resolver(
-#     "now", lambda: now
-# )  # register a new resolver for the current time
 
 # get parent directory of the current script
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 cfg = OmegaConf.load(f"{parent_dir}/conf/config.yaml")
 sam2_sieve_cfg = cfg.sam2sieve
-
+if not os.path.exists(sam2_sieve_cfg.output_dir):
+    os.makedirs(sam2_sieve_cfg.output_dir)
+output_path = cfg.sam2videoPredictor.output_dir
+if not os.path.exists(output_path):
+    os.makedirs(output_path)
 # First workflow component: SAM2-SIEVE
 video_name=f"color_video_compiled_for_sieve_{now}.mp4"
 sam = sieve.function.get("sieve/text-to-segment")
@@ -95,7 +96,6 @@ mask_frames = np.array(mask_frames)
 for i in range(mask_frames.shape[0]):
     cv2.imshow("mask", mask_frames[i])
     cv2.waitKey(1)
-output_path = cfg.sam2videoPredictor.output_dir
 # save each frame as a separate image
 for i in range(mask_frames.shape[0]):
     frame_name = os.path.join(output_path, f"frame_{i:04d}.jpg")
