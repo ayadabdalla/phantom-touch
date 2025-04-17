@@ -23,7 +23,7 @@ def main():
     # take the arguments from a yaml config file using OmegaConf
     user = os.getenv('USER')
     repo_dir = search_folder(f"/home/{user}/","phantom-touch")
-    config = OmegaConf.load(f'{repo_dir}/src/hamer/conf/config.yaml')
+    config = OmegaConf.load(f'{repo_dir}/src/hamer/conf/hamer_segmentation.yaml')
     args = OmegaConf.to_container(config, resolve=True)
     args = OmegaConf.create(args)
     args.img_folder = os.path.expanduser(args.img_folder)

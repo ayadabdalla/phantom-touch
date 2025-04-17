@@ -29,7 +29,7 @@ OmegaConf.register_new_resolver(
 
 # get parent directory of the current script
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-cfg = OmegaConf.load(f"{parent_dir}/conf/config.yaml")
+cfg = OmegaConf.load(f"{parent_dir}/conf/sam2_segmentation.yaml")
 sam2_sieve_cfg = cfg.sam2sieve
 if not os.path.exists(sam2_sieve_cfg.output_dir):
     os.makedirs(sam2_sieve_cfg.output_dir)
