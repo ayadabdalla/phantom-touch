@@ -95,7 +95,6 @@ def main():
         for vitposes in vitposes_out:
             left_hand_keyp = vitposes['keypoints'][-42:-21]
             right_hand_keyp = vitposes['keypoints'][-21:]
-
             # Rejecting not confident detections
             keyp = left_hand_keyp
             valid = keyp[:,2] > 0.5
@@ -103,12 +102,21 @@ def main():
                 bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
                 bboxes.append(bbox)
                 is_right.append(0)
+            else:
+               # get string to identify the keypoints
+                left_string = f"{img_path.stem}_left"
+                keypoints_2d_path = f"{args.out_folder}/keypoints_2d_{left_string}"
+                np.save(keypoints_2d_path, left_hand_keyp)
             keyp = right_hand_keyp
             valid = keyp[:,2] > 0.5
             if sum(valid) > 3:
                 bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
                 bboxes.append(bbox)
                 is_right.append(1)
+            else:
+                right_string = f"{img_path.stem}_right"
+                keypoints_2d_path = f"{args.out_folder}/keypoints_2d_{right_string}"
+                np.save(keypoints_2d_path, right_hand_keyp)
 
         if len(bboxes) == 0:
             continue
@@ -128,6 +136,14 @@ def main():
             batch = recursive_to(batch, device)
             with torch.no_grad():
                 out = model(batch)
+            # save the keypoints out of the model
+            keypoints_3d = out['pred_keypoints_3d'].detach().cpu().numpy()
+            # store the keypoints
+            # get string to identify the keypoints
+            right_string = f"{img_path.stem}_right"
+            left_string = f"{img_path.stem}_left"
+            keypoints_3d_path = f"{args.out_folder}/keypoints_3d_{right_string}"
+            np.save(keypoints_3d_path, keypoints_3d)
             multiplier = (2*batch['right']-1)
             pred_cam = out['pred_cam']
             pred_cam[:,1] = multiplier*pred_cam[:,1]
@@ -183,21 +199,21 @@ def main():
                     tmesh = renderer.vertices_to_trimesh(verts, camera_translation, LIGHT_BLUE, is_right=is_right)
                     tmesh.export(os.path.join(args.out_folder, f'{img_fn}_{person_id}.obj'))
 
-        # # Render front view
-        # if args.full_frame and len(all_verts) > 0:
-        #     misc_args = dict(
-        #         mesh_base_color=LIGHT_BLUE,
-        #         scene_bg_color=(1, 1, 1),
-        #         focal_length=scaled_focal_length,
-        #     )
-        #     cam_view = renderer.render_rgba_multiple(all_verts, cam_t=all_cam_t, render_res=img_size[n], is_right=all_right, **misc_args)
+        # Render front view
+        if args.full_frame and len(all_verts) > 0:
+            misc_args = dict(
+                mesh_base_color=LIGHT_BLUE,
+                scene_bg_color=(1, 1, 1),
+                focal_length=scaled_focal_length,
+            )
+            cam_view = renderer.render_rgba_multiple(all_verts, cam_t=all_cam_t, render_res=img_size[n], is_right=all_right, **misc_args)
 
-        #     # Overlay image
-        #     input_img = img_cv2.astype(np.float32)[:,:,::-1]/255.0
-        #     input_img = np.concatenate([input_img, np.ones_like(input_img[:,:,:1])], axis=2) # Add alpha channel
-        #     input_img_overlay = input_img[:,:,:3] * (1-cam_view[:,:,3:]) + cam_view[:,:,:3] * cam_view[:,:,3:]
+            # Overlay image
+            input_img = img_cv2.astype(np.float32)[:,:,::-1]/255.0
+            input_img = np.concatenate([input_img, np.ones_like(input_img[:,:,:1])], axis=2) # Add alpha channel
+            input_img_overlay = input_img[:,:,:3] * (1-cam_view[:,:,3:]) + cam_view[:,:,:3] * cam_view[:,:,3:]
 
-        #     cv2.imwrite(os.path.join(args.out_folder, f'{img_fn}_all.jpg'), 255*input_img_overlay[:, :, ::-1])
+            cv2.imwrite(os.path.join(args.out_folder, f'{img_fn}_all.jpg'), 255*input_img_overlay[:, :, ::-1])
 
 if __name__ == '__main__':
     main()

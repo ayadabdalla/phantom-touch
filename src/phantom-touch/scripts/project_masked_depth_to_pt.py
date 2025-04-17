@@ -16,12 +16,12 @@ masks_directory_path = sam2config.sam2videoPredictor.output_dir
 output_directory_path = sam2config.sam2videoPredictor.output_dir
 parent_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 conf = OmegaConf.load(f"{parent_directory}/conf/3d_projection.yaml")
-
+shape =conf.shape
 ### Load the data
 # load the color images
 numpy_color = load_rgb_images(rgb_directory_path, prefix="Color_")
 #load the raw depth images
-numpy_depth = load_raw_depth_images(sam2config.sam2videoPredictor.video_frames_dir)
+numpy_depth = load_raw_depth_images(sam2config.sam2videoPredictor.video_frames_dir,shape=shape)
 
 numpy_depth.reshape(
 numpy_depth.shape[0], numpy_color.shape[1] ,numpy_color.shape[2])

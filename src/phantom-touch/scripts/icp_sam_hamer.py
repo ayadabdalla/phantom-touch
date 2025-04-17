@@ -110,7 +110,7 @@ print("ICP Transformation Matrix:")
 # ----------- Visualize the Result -----------
 # For visualization, color the two point clouds differently.
 pcd_hamer_down.paint_uniform_color([1, 0, 0])  # Red for the mesh-derived points
-# pcd_sam2_down.paint_uniform_color([0, 1, 0])  # Green for the PLY point cloud
+pcd_sam2_down.paint_uniform_color([0, 1, 0])  # Green for the PLY point cloud
 
 # # Transform the mesh point cloud with the ICP result.
 print(reg_p2l.transformation)
@@ -121,7 +121,5 @@ print("hamer Point Cloud:")
 print_stats(pcd_hamer_down)
 print("sam2 Point Cloud:")
 print_stats(pcd_sam2_down)
-# # Visualize the transformed point cloud
-o3d.visualization.draw_geometries([pcd_hamer_down, pcd_sam2_down])
 # visualize the 3D coordinate system
 o3d.visualization.draw_geometries([pcd_hamer_down, pcd_sam2_down, o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)])
