@@ -102,10 +102,8 @@ def main():
                 bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
                 bboxes.append(bbox)
                 is_right.append(0)
-            else:
-               # get string to identify the keypoints
-                left_string = f"{img_path.stem}_left"
-                keypoints_2d_path = f"{args.out_folder}/keypoints_2d_{left_string}"
+                left_string = f"{img_path.stem}_left" # get string to identify the keypoints
+                keypoints_2d_path = f"{args.out_folder}/vitpose_keypoints_2d_{left_string}"
                 np.save(keypoints_2d_path, left_hand_keyp)
             keyp = right_hand_keyp
             valid = keyp[:,2] > 0.5
@@ -113,9 +111,8 @@ def main():
                 bbox = [keyp[valid,0].min(), keyp[valid,1].min(), keyp[valid,0].max(), keyp[valid,1].max()]
                 bboxes.append(bbox)
                 is_right.append(1)
-            else:
                 right_string = f"{img_path.stem}_right"
-                keypoints_2d_path = f"{args.out_folder}/keypoints_2d_{right_string}"
+                keypoints_2d_path = f"{args.out_folder}/vitpose_keypoints_2d_{right_string}"
                 np.save(keypoints_2d_path, right_hand_keyp)
 
         if len(bboxes) == 0:
@@ -136,13 +133,12 @@ def main():
             batch = recursive_to(batch, device)
             with torch.no_grad():
                 out = model(batch)
+            
             # save the keypoints out of the model
+            keypoints_2d = out['pred_keypoints_2d'].detach().cpu().numpy()
             keypoints_3d = out['pred_keypoints_3d'].detach().cpu().numpy()
-            # store the keypoints
-            # get string to identify the keypoints
-            right_string = f"{img_path.stem}_right"
-            left_string = f"{img_path.stem}_left"
-            keypoints_3d_path = f"{args.out_folder}/keypoints_3d_{right_string}"
+            np.save(os.path.join(args.out_folder, f'{img_path.stem}_keypoints_2d.npy'), keypoints_2d)
+            keypoints_3d_path = f"{args.out_folder}/{img_path.stem}_keypoints_3d_{right_string}"
             np.save(keypoints_3d_path, keypoints_3d)
             multiplier = (2*batch['right']-1)
             pred_cam = out['pred_cam']
