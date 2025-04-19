@@ -65,11 +65,13 @@ print(f"Number of points in the PLY file: {len(np.asarray(pcd_sam2.points))}")
 
 # ----------- Optional: Downsample for Faster ICP -----------
 voxel_size = 0.005  # Adjust voxel size as needed
-target = pcd_hamer_down = pcd_hamer.voxel_down_sample(voxel_size)
-source = pcd_sam2_down = pcd_sam2.voxel_down_sample(voxel_size)
+target = pcd_sam2_down  = pcd_sam2.voxel_down_sample(voxel_size)
+target = target.remove_statistical_outlier(nb_neighbors=200, std_ratio=0.1)[0]
+voxel_size = 0.009  # Adjust voxel size as needed
+source = pcd_hamer_down = pcd_hamer.voxel_down_sample(voxel_size)
 
 # print the number of points in the downsampled point cloud
-print(f"Number of points in the downsampled PLY file: {len(np.asarray(pcd_sam2_down.points))}")
+print(f"Number of points in the downsampled PLY file: {len(np.asarray(target.points))}")
 
 # ----------- Preprocess the Point Clouds -----------
 # Center the point clouds around the origin
@@ -78,48 +80,52 @@ def center_point_cloud(pcd):
     center = np.mean(points, axis=0)
     points -= center
     pcd.points = o3d.utility.Vector3dVector(points)
-center_point_cloud(pcd_hamer_down)
-center_point_cloud(pcd_sam2_down)
+center_point_cloud(source)
+center_point_cloud(target)
 
-# Estimate normals for the point clouds
-pcd_hamer_down.estimate_normals(
+# # invert the hamer point cloud
+source.points = o3d.utility.Vector3dVector(
+    np.asarray(source.points) * np.array([1, -1, -1])
+)
+
+# # Estimate normals for the point clouds
+source.estimate_normals(
     search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30)
 )
-pcd_sam2_down.estimate_normals(
+target.estimate_normals(
     search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.1, max_nn=30)
 )
 
 # ----------- ICP Registration -----------
-# Set a distance threshold (max correspondence points-pair distance)
-threshold = 0.05
 # Use an identity matrix as the initial transformation estimate.
-trans_init = np.eye(4)
+initial_transform = np.eye(4)
+max_correspondence_distance = 0.05
 
-
-# # Perform point-to-point ICP registration.
 reg_p2l = o3d.pipelines.registration.registration_icp(
-    source,
-    target,
-    threshold,
-    trans_init,
-    o3d.pipelines.registration.TransformationEstimationPointToPlane(),
+    source, target,
+    max_correspondence_distance,  # Critical parameter - start with a reasonable value
+    init=initial_transform,
+    estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane(),
+    criteria=o3d.pipelines.registration.ICPConvergenceCriteria(
+        max_iteration=2000, relative_fitness=1e-6, relative_rmse=1e-6
+    ),
 )
+
 
 print("ICP Transformation Matrix:")
 
 # ----------- Visualize the Result -----------
 # For visualization, color the two point clouds differently.
-pcd_hamer_down.paint_uniform_color([1, 0, 0])  # Red for the mesh-derived points
-pcd_sam2_down.paint_uniform_color([0, 1, 0])  # Green for the PLY point cloud
+source.paint_uniform_color([1, 0, 0])  # Red for the mesh-derived points
 
 # # Transform the mesh point cloud with the ICP result.
 print(reg_p2l.transformation)
-pcd_sam2_down.transform(reg_p2l.transformation)
+source.transform(reg_p2l.transformation)
 
 # get the statistical details of each axis of each point cloud, min, max and mean
 print("hamer Point Cloud:")
-print_stats(pcd_hamer_down)
+print_stats(source)
 print("sam2 Point Cloud:")
-print_stats(pcd_sam2_down)
+print_stats(target)
 # visualize the 3D coordinate system
-o3d.visualization.draw_geometries([pcd_hamer_down, pcd_sam2_down, o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)])
+o3d.visualization.draw_geometries([source, target, o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)])

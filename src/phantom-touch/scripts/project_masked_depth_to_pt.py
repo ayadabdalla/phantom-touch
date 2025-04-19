@@ -10,7 +10,7 @@ from utils.rgb_utils import load_rgb_images
 
 # get script metadata
 script_dir = os.path.dirname(os.path.abspath(__file__))
-sam2config = OmegaConf.load(f"{script_dir}/../../sam2/conf/config.yaml")
+sam2config = OmegaConf.load(f"{script_dir}/../../sam2/conf/sam2_segmentation.yaml")
 rgb_directory_path = sam2config.sam2videoPredictor.video_frames_dir
 masks_directory_path = sam2config.sam2videoPredictor.output_dir
 output_directory_path = sam2config.sam2videoPredictor.output_dir
@@ -44,8 +44,7 @@ i = 0
 for depth_frame, color_frame, mask_frame in zip(numpy_depth, numpy_color, numpy_masks):
     color_frame = cv2.cvtColor(color_frame, cv2.COLOR_BGR2RGB)
     mask_frame = cv2.cvtColor(mask_frame, cv2.COLOR_BGR2GRAY)
-    width, height = color_frame.shape[:2]  # (width, height, channels)
-    print(f"depth frame max: {np.max(depth_frame)}")
+    height, width = color_frame.shape[:2]  # (width, height, channels)
     depth_original = (
         depth_frame.copy()
     )  # create a copy of the original depth frame for visualization
@@ -60,6 +59,12 @@ for depth_frame, color_frame, mask_frame in zip(numpy_depth, numpy_color, numpy_
     start_x=conf.crop.x
     start_y=conf.crop.y
     intrinsic.set_intrinsics(width, height, int(fx), int(fy), int(cx-start_x), int(cy-start_y))
+    # depth_frame = np.swapaxes(depth_frame, 0, 1)  # swap axes to match open3d format
+    # color_frame = np.swapaxes(color_frame, 0, 1)  # swap axes to match open3d format
+    # depth_frame=np.ascontiguousarray(depth_frame)
+    # color_frame=np.ascontiguousarray(color_frame)
+    
+
     depth_frame_o3d = o3d.geometry.Image(
         depth_frame
     )  # Create open3d depth image from the current depth image

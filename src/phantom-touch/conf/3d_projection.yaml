@@ -2,7 +2,8 @@ crop:
   x: 0
   y: 0
 shape: [1080,1920]
-keypoints2d_path : "/home/abdullah/utn/robotics/cameras/data/output/handover_collection_1/sample/hamer_output/keypoints_2d_Color_1920x1080_17075770ms_e00000_00054_left.npy"
-depth_map_path : "/home/abdullah/utn/robotics/cameras/data/recordings/handover_collection_1/sample/extracted_RawDepth_17075772ms_e00000_00054.raw.npy"
-color_image_path : "/home/abdullah/utn/robotics/cameras/data/recordings/handover_collection_1/sample/Color_1920x1080_17075770ms_e00000_00054.png"
-sam2hand_pcd_path: "/home/abdullah/utn/robotics/cameras/data/output/handover_collection_1/sample/sam2-vid_output/frame_3.ply"
+depth_map_path : "/home/abdullah/utn/robotics/cameras/data/recordings/handover_collection_1/sample/extracted_RawDepth_00053.raw.npy"
+color_image_path : "/home/abdullah/utn/robotics/cameras/data/recordings/handover_collection_1/sample/Color_1920x1080_00053.png"
+sam2hand_pcd_path: "/home/abdullah/utn/robotics/cameras/data/output/handover_collection_1/sample/sam2-vid_output/frame_2.ply"
+hamer_keypoints_path: "/home/abdullah/utn/robotics/cameras/data/output/handover_collection_1/sample/hamer_output/Color_1920x1080_e00000_00053_keypoints_2d.npy"
+vitpose_keypoints_path: "/home/abdullah/utn/robotics/cameras/data/output/handover_collection_1/sample/hamer_output/vitpose_keypoints_2d_Color_1920x1080_e00000_00053_right.npy"
