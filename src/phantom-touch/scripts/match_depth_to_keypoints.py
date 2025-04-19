@@ -26,9 +26,10 @@ color_image = cv2.imread(color_image_path)
 # load and process the vitpose keypoints
 vitpose_keypoints2d = np.load(vitpose_keypoints_path, allow_pickle=True)  # pixel coordinates
 vitpose_keypoints2d = vitpose_keypoints2d[:, :2]  # remove confidence score
-
 vitpose_keypoints2d = vitpose_keypoints2d.astype(int) # convert to int
 
+# extract thumb and index tips based on Topdown coco wholebody hand keypoints
+vitpose_keypoints2d = vitpose_keypoints2d[[4, 8], :]
 
 # get the depth map for the keypoints
 depth_keypoints_map = np.zeros((depth_map.shape[0], depth_map.shape[1])) # create a mask for the keypoints
@@ -37,7 +38,7 @@ depth_keypoints_map[depth_keypoints_map == 0] = np.nan # use nan instead of zero
 depth_keypoints_map = depth_keypoints_map.astype(np.float32) # convert depth map to float32
 
 
-# create point cloud from rgbd image
+# create thumb index tips point cloud from rgbd image
 depth_image = o3d.geometry.Image(depth_keypoints_map)
 color_image = o3d.geometry.Image(color_image)
 pcd = o3d.geometry.PointCloud()
@@ -50,18 +51,24 @@ intrinsic.set_intrinsics(
 )
 pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd_image, intrinsic)
 
+# add fingers to tcp mapping point and set up visualization for later
+pcd.paint_uniform_color([1, 0, 0])
+points = np.asarray(pcd.points)
+midpoint = (points[0] + points[1]) / 2
+pcd.points = o3d.utility.Vector3dVector(np.vstack((points, midpoint)))
+colors = np.asarray(pcd.colors)
+midpoint_color = np.asarray([0,1,0]) # green color
+pcd.colors = o3d.utility.Vector3dVector(np.vstack((colors, midpoint_color))) # add the midpoint color to the point cloud
+
+
 # load equivalent sam2 segmented pcd hand
 pcd_sam = o3d.io.read_point_cloud(config.sam2hand_pcd_path)
+pcd_sam = pcd_sam.voxel_down_sample(voxel_size=0.01)
 
 # display pcds statistics for analysis
+print(f"thumb index point cloud length: {len(np.asarray(pcd.points))}")
 print_stats(pcd_sam)
 print_stats(pcd)
-
-# uniformly paint the
-pcd.paint_uniform_color([1, 0, 0])
-pcd_sam.paint_uniform_color([0, 1, 0])
-#downsample the sam point cloud
-pcd_sam = pcd_sam.voxel_down_sample(voxel_size=0.01)
 
 # visualize with coordinate frame
 o3d.visualization.draw_geometries(

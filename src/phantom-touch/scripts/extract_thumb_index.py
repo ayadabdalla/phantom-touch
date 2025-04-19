@@ -1,60 +1,51 @@
 import numpy as np
 
-def extract_index_and_thumb(hand_keypoints):
+def extract_index_and_thumb_batch(hand_keypoints_batch):
     """
-    Extract the index finger and thumb keypoints from a set of 21 3D hand keypoints.
-    
+    Extract index finger and thumb keypoints from a batch of 3D hand keypoints.
+
     Parameters:
     -----------
-    hand_keypoints : numpy.ndarray
-        Array of shape (21, 3) containing 3D coordinates of 21 hand keypoints
-        Keypoints are organized in the following order:
-        0: Wrist
-        1-4: Thumb (from base to tip)
-        5-8: Index finger (from base to tip)
-        9-12: Middle finger (from base to tip)
-        13-16: Ring finger (from base to tip)
-        17-20: Pinky finger (from base to tip)
+    hand_keypoints_batch : numpy.ndarray
+        Array of shape (n, 21, 3), where n is the number of hand samples.
     
     Returns:
     --------
-    tuple: (index_finger, thumb)
-        index_finger: numpy.ndarray of shape (4, 3) containing index finger keypoints
-        thumb: numpy.ndarray of shape (4, 3) containing thumb keypoints
+    tuple: (index_fingers, thumbs)
+        index_fingers: numpy.ndarray of shape (n, 4, 3) containing index finger keypoints
+        thumbs: numpy.ndarray of shape (n, 4, 3) containing thumb keypoints
     """
     # Validate input
-    if not isinstance(hand_keypoints, np.ndarray):
-        hand_keypoints = np.array(hand_keypoints)
+    if not isinstance(hand_keypoints_batch, np.ndarray):
+        hand_keypoints_batch = np.array(hand_keypoints_batch)
     
-    if hand_keypoints.shape != (21, 3):
-        raise ValueError(f"Expected hand keypoints of shape (21, 3), got {hand_keypoints.shape}")
+    if hand_keypoints_batch.ndim != 3 or hand_keypoints_batch.shape[1:] != (21, 3):
+        raise ValueError(f"Expected shape (n, 21, 3), got {hand_keypoints_batch.shape}")
     
-    # Extract index finger keypoints (indices 5-8)
-    index_finger = hand_keypoints[5:9]
+    # Extract index finger and thumb keypoints
+    index_fingers = hand_keypoints_batch[:, 5:9, :]
+    thumbs = hand_keypoints_batch[:, 1:5, :]
     
-    # Extract thumb keypoints (indices 1-4)
-    thumb = hand_keypoints[1:5]
-    
-    return index_finger, thumb
+    return index_fingers, thumbs
 
 # Example usage
 if __name__ == "__main__":
-    # Generate dummy 3D hand keypoints for demonstration
-    # In a real application, you would get these from HAMER or other hand tracking model
-    dummy_keypoints = np.random.randn(21, 3)  # 21 keypoints with x, y, z coordinates
-    
-    # Extract index finger and thumb
-    index_finger, thumb = extract_index_and_thumb(dummy_keypoints)
-    
-    print(f"Index finger keypoints shape: {index_finger.shape}")
-    print(f"Thumb keypoints shape: {thumb.shape}")
-    
-    print("\nIndex finger keypoints:")
-    for i, point in enumerate(index_finger):
-        joint_name = ["MCP", "PIP", "DIP", "TIP"][i]
-        print(f"  {joint_name}: {point}")
-    
-    print("\nThumb keypoints:")
-    for i, point in enumerate(thumb):
-        joint_name = ["CMC", "MCP", "IP", "TIP"][i]
-        print(f"  {joint_name}: {point}")
+    n_samples = 5  # Number of samples
+    dummy_keypoints_batch = np.random.randn(n_samples, 21, 3)
+    dummy_keypoints_batch = np.load(
+        "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_experiment_1/sam2-vid_output/keypoints_3d.npy",
+        allow_pickle=True,
+    )
+    index_fingers, thumbs = extract_index_and_thumb_batch(dummy_keypoints_batch)
+
+    for i in range(n_samples):
+        print(f"\nSample {i+1}")
+        print("Index finger keypoints:")
+        for j, point in enumerate(index_fingers[i]):
+            joint_name = ["MCP", "PIP", "DIP", "TIP"][j]
+            print(f"  {joint_name}: {point}")
+        
+        print("Thumb keypoints:")
+        for j, point in enumerate(thumbs[i]):
+            joint_name = ["CMC", "MCP", "IP", "TIP"][j]
+            print(f"  {joint_name}: {point}")
