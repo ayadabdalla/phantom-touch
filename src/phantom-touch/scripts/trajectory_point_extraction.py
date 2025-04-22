@@ -57,10 +57,6 @@ def calculate_target_position_and_orientation(hand_keypoints):
     # The normal vector to the plane is the last singular vector
     normal_vector = vh[2, :]
     
-    # Ensure the normal vector points "outward" from the palm
-    # A simple heuristic: make sure it has a positive Z component (assuming Z is forward)
-    if normal_vector[2] < 0:
-        normal_vector = -normal_vector
     
     # Normalize the vector to unit length
     normal_vector = normal_vector / np.linalg.norm(normal_vector)
@@ -69,53 +65,14 @@ def calculate_target_position_and_orientation(hand_keypoints):
 
 # Example usage
 if __name__ == "__main__":
-    # Generate dummy 3D hand keypoints for demonstration
-    # In a real application, you would get these from HAMER or other hand tracking model
-    np.random.seed(42)  # For reproducible results
-    dummy_keypoints = np.random.randn(21, 3)  # 21 keypoints with x, y, z coordinates
+    hand_keypoints_pcd = np.load("hand_keypoints_pcd.npz")
+    hand_keypoints = hand_keypoints_pcd['points']
+    print(f"hand keypoints pcd length: {len(hand_keypoints)}")
     
     # Calculate target position and orientation
-    target_position, normal_vector, plane_points = calculate_target_position_and_orientation(dummy_keypoints)
+    target_position, normal_vector, plane_points = calculate_target_position_and_orientation(hand_keypoints)
     
+    # save the target position and orientation to a file
+    np.savez_compressed("target_position_orientation.npz", target_position=target_position, normal_vector=normal_vector)
     print(f"Target position (midpoint between tips):\n{target_position}")
-    print(f"\nPlane normal vector (target orientation):\n{normal_vector}")
-    
-    # Visualize the results (commented out - uncomment if you have matplotlib)
-    
-    import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d import Axes3D
-    
-    fig = plt.figure(figsize=(10, 8))
-    ax = fig.add_subplot(111, projection='3d')
-    
-    # Plot all hand keypoints
-    ax.scatter(dummy_keypoints[:, 0], dummy_keypoints[:, 1], dummy_keypoints[:, 2], 
-               c='gray', alpha=0.5, label='All keypoints')
-    
-    # Plot thumb points
-    ax.scatter(dummy_keypoints[1:5, 0], dummy_keypoints[1:5, 1], dummy_keypoints[1:5, 2], 
-               c='blue', label='Thumb')
-    
-    # Plot index finger points
-    ax.scatter(dummy_keypoints[5:9, 0], dummy_keypoints[5:9, 1], dummy_keypoints[5:9, 2], 
-               c='green', label='Index finger')
-    
-    # Plot target position
-    ax.scatter(target_position[0], target_position[1], target_position[2], 
-               c='red', s=100, label='Target position')
-    
-    # Plot normal vector
-    arrow_scale = 0.2
-    ax.quiver(target_position[0], target_position[1], target_position[2],
-              normal_vector[0] * arrow_scale, normal_vector[1] * arrow_scale, normal_vector[2] * arrow_scale,
-              color='red', arrow_length_ratio=0.3, label='Normal vector')
-    
-    # Set labels and title
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.set_title('Hand Target Position and Orientation')
-    ax.legend()
-    
-    plt.tight_layout()
-    plt.show()
+    print(f"\nPlane normal vector (target orientation):\n{normal_vector}")    
