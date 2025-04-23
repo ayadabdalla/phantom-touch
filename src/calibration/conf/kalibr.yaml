@@ -1,0 +1,20 @@
+output: /home/ayad/ontouch/image #output path + image name
+target_type: aprilgrid
+output_yaml: conf/threed_kalibr.yaml
+show: false
+
+# Target specific parameters
+cols: 4
+rows: 3
+size: 0.04  # Tag size in meters
+tag_spacing: 0.3  # Relative tag spacing
+
+#Orbbec camera parameters
+fx: 1124.38
+fy: 1123.93
+cx: 951.31
+cy: 543.694
+k1: 0.0760687
+k2: -0.104411
+p1: 0.000157119
+p2: -1.39212e-05

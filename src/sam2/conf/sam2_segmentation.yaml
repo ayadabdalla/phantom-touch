@@ -1,11 +1,11 @@
 metadata:
   repo_dir: ${phantom-touch:}
-  data_dir: /home/abdullah/utn/robotics/cameras/
+  data_dir: /mnt/dataset_drive/ayad/phantom-touch
   model_dir: /mnt/dataset_drive/ayad/phantom-touch
-  experiment_name: handover_collection_1/sample # Name of the experiment
+  experiment_name: handover_collection_1 # Name of the experiment
   # experiment_specifics: white_nonreflective_cloth_light_on_ambient_light
 sam2sieve:
-  # images_path : ${metadata.data_dir}/data/recordings/${metadata.experiment_name}/${metadata.experiment_specifics}/png_output/color_sample
+  # images_path : ${metadata.data_dir}/data/recordings/${metadata.experiment_name}/${metadata.experiment_specifics}/png_output/
   images_path : ${metadata.data_dir}/data/recordings/${metadata.experiment_name}
   text_prompt : hand
   # output_dir : ${metadata.data_dir}/data/output/${metadata.experiment_name}/${metadata.experiment_specifics}/sam2-sieve_output
@@ -13,7 +13,7 @@ sam2sieve:
 sam2videoPredictor:
   sam2_checkpoint : ${metadata.model_dir}/models/sam2/checkpoints/sam2.1_hiera_large.pt #TODO:: change to the correct path
   model_cfg : configs/sam2.1/sam2.1_hiera_l.yaml # relative to sam2
-  # video_frames_dir : ${metadata.data_dir}/data/recordings/${metadata.experiment_name}/${metadata.experiment_specifics}/png_output/color_sample
+  # video_frames_dir : ${metadata.data_dir}/data/recordings/${metadata.experiment_name}/${metadata.experiment_specifics}/png_output/
   # output_dir : ${metadata.data_dir}/data/output/${metadata.experiment_name}/${metadata.experiment_specifics}/sam2-vid_output
   video_frames_dir : ${metadata.data_dir}/data/recordings/${metadata.experiment_name}
   output_dir : ${metadata.data_dir}/data/output/${metadata.experiment_name}/sam2-vid_output
