@@ -1,5 +1,5 @@
-data_directory : "/home/abdullah/utn/robotics/cameras/data/recordings"
-experiment_name : "handover_experiment_1" # Name of the experiment
+data_directory : "/home/epon04yc/Orbbec/build/bin/"
+experiment_name : "test_overlay" # Name of the experiment
 input_directory : "${data_directory}/${experiment_name}"
 output_directory : "${data_directory}/${experiment_name}"
-shape : [632, 1000]
+shape : [1080, 1920]
