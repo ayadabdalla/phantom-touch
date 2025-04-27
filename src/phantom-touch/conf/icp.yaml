@@ -1,6 +1,6 @@
 # conf/config.yaml
 experiment_name: handover_collection_1/sample
-data_root: "/mnt/dataset_drive/ayad/phantom-touch/output"
+data_root: /mnt/dataset_drive/ayad/phantom-touch/data/output
 pcd_hamer:
   data_ontology: hamer_output
   data_sample_name: "Color_1920x1080_e00000_00054_0"

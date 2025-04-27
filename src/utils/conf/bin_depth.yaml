@@ -1,5 +1,5 @@
-data_directory : "/home/epon04yc/Orbbec/build/bin/"
-experiment_name : "test_overlay" # Name of the experiment
+data_directory : "/mnt/dataset_drive/ayad/phantom-touch/data/recordings" # Directory where the data is stored
+experiment_name : "handover_collection_1/sample" # Name of the experiment
 input_directory : "${data_directory}/${experiment_name}"
 output_directory : "${data_directory}/${experiment_name}"
 shape : [1080, 1920]

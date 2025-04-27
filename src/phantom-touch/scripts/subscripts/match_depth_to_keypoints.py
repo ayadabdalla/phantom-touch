@@ -10,7 +10,7 @@ import os
 
 # get metadata
 parent_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-config = OmegaConf.load(f"{parent_directory}/conf/3d_projection.yaml")
+config = OmegaConf.load(f"{parent_directory}/../conf/3d_projection.yaml")
 depth_map_path = config.depth_map_path
 vitpose_keypoints_path = config.vitpose_keypoints_path
 hamer_keypoints_path = config.hamer_keypoints_path
@@ -23,18 +23,17 @@ hamer_keypoints2d = np.load(
 )  # Normalized camera coordinates
 depth_map = np.load(depth_map_path, allow_pickle=True)
 color_image = cv2.imread(color_image_path)
-# load and process the vitpose keypoints
 vitpose_keypoints2d = np.load(vitpose_keypoints_path, allow_pickle=True)  # pixel coordinates
 vitpose_keypoints2d = vitpose_keypoints2d[:, :2]  # remove confidence score
 vitpose_keypoints2d = vitpose_keypoints2d.astype(int) # convert to int
 
-# get the depth map for the keypoints
+# process inputs: get the depth map for the keypoints
 depth_keypoints_map = np.zeros((depth_map.shape[0], depth_map.shape[1])) # create a mask for the keypoints
 depth_keypoints_map[vitpose_keypoints2d[:,1],vitpose_keypoints2d[:,0]] = depth_map[vitpose_keypoints2d[:,1],vitpose_keypoints2d[:,0]]
 depth_keypoints_map[depth_keypoints_map == 0] = np.nan # use nan instead of zeros for the mask
 depth_keypoints_map = depth_keypoints_map.astype(np.float32) # convert depth map to float32
 
-#alternatively create a point cloud from the depth image without o3d to have control over the points indeces
+#create a point cloud from the depth image without o3d to have control over the points indeces
 points = np.zeros((len(vitpose_keypoints2d), 3))
 colors = np.zeros((len(vitpose_keypoints2d), 3))
 for i, (x, y) in enumerate(vitpose_keypoints2d):
@@ -50,7 +49,7 @@ points[:, 0] = (points[:, 0] - cx) * points[:, 2] / fx / 1000.0 # convert to met
 points[:, 1] = (points[:, 1] - cy) * points[:, 2] / fy / 1000.0 # convert to meters
 points[:, 2] = points[:, 2] / 1000.0 # convert to meters
 # save point cloud to file
-np.savez_compressed("hand_keypoints_pcd.npz", points=points, colors=colors)
+np.savez_compressed(f"{config.trajectory_directory}/hand_keypoints_pcd.npz", points=points, colors=colors)
 # create point cloud
 pcd = o3d.geometry.PointCloud()
 pcd.points = o3d.utility.Vector3dVector(points)
@@ -67,8 +66,9 @@ print(f"thumb index point cloud length: {len(np.asarray(pcd.points))}")
 print_stats(pcd_sam)
 print_stats(pcd)
 
-# load extra points and normal vector
-midpoint = np.load("target_position_orientation.npz")
+# load tcp and normal vector from the trajectory point extraction
+trajectory_directory = config.trajectory_directory
+midpoint = np.load(f"{trajectory_directory}/target_position_orientation.npz")
 target_position = midpoint['target_position']
 normal_vector = midpoint['normal_vector']
 # add the target position to the point cloud

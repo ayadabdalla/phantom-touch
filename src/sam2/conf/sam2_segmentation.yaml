@@ -16,4 +16,5 @@ sam2videoPredictor:
   # video_frames_dir : ${metadata.data_dir}/data/recordings/${metadata.experiment_name}/${metadata.experiment_specifics}/png_output/
   # output_dir : ${metadata.data_dir}/data/output/${metadata.experiment_name}/${metadata.experiment_specifics}/sam2-vid_output
   video_frames_dir : ${metadata.data_dir}/data/recordings/${metadata.experiment_name}
+  video_frames_sample_dir : ${metadata.data_dir}/data/recordings/handover_collection_1/sample
   output_dir : ${metadata.data_dir}/data/output/${metadata.experiment_name}/sam2-vid_output

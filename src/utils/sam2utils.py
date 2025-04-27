@@ -59,6 +59,8 @@ def filelist_to_mp4sieve(frames_dir, prefix, output_path=None):
     ]
     images = sorted(images)
     print(f"Number of loaded images: {len(images)}")
+    images = images[:2]
+    print(f"Number of images to be worked on by sieve: {len(images)}")
     first_frame = cv2.imread(os.path.join(frames_dir, images[0]))
     height, width, layers = first_frame.shape
     frame_size = (width, height)

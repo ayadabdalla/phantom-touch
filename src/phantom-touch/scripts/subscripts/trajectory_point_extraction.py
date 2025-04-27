@@ -1,4 +1,6 @@
+import os
 import numpy as np
+from omegaconf import OmegaConf
 from scipy import linalg
 
 def calculate_target_position_and_orientation(hand_keypoints):
@@ -68,11 +70,13 @@ if __name__ == "__main__":
     hand_keypoints_pcd = np.load("hand_keypoints_pcd.npz")
     hand_keypoints = hand_keypoints_pcd['points']
     print(f"hand keypoints pcd length: {len(hand_keypoints)}")
-    
+    repository_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config = OmegaConf.load(f"{repository_directory}/conf/3d_projection.yaml")
+    output_directory = os.path.join(config.trajectory_directory, "target_position_orientation.npz")
     # Calculate target position and orientation
     target_position, normal_vector, plane_points = calculate_target_position_and_orientation(hand_keypoints)
     
     # save the target position and orientation to a file
-    np.savez_compressed("target_position_orientation.npz", target_position=target_position, normal_vector=normal_vector)
+    np.savez_compressed(output_directory, target_position=target_position, normal_vector=normal_vector)
     print(f"Target position (midpoint between tips):\n{target_position}")
     print(f"\nPlane normal vector (target orientation):\n{normal_vector}")    

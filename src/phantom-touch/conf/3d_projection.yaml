@@ -2,8 +2,11 @@ crop:
   x: 0
   y: 0
 shape: [1080,1920]
-depth_map_path : " /mnt/dataset_drive/ayad/phantom-touch/data/recordings/handover_collection_1/sample/extracted_RawDepth_00054.raw.npy"
-color_image_path : " /mnt/dataset_drive/ayad/phantom-touch/data/recordings/handover_collection_1/sample/Color_1920x1080_00054.png"
-sam2hand_pcd_path: " /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/sample/sam2-vid_output/frame_3.ply"
-hamer_keypoints_path: " /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/sample/hamer_output/Color_1920x1080_e00000_00054_keypoints_2d.npy"
-vitpose_keypoints_path: " /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/sample/hamer_output/vitpose_keypoints_2d_Color_1920x1080_e00000_00054_right.npy"
+
+trajectory_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/sample/trajectories
+
+depth_map_path : /mnt/dataset_drive/ayad/phantom-touch/data/recordings/handover_collection_1/sample/extracted_RawDepth_e00000_00054.raw.npy
+color_image_path : /mnt/dataset_drive/ayad/phantom-touch/data/recordings/handover_collection_1/sample/Color_1920x1080_00054.png
+sam2hand_pcd_path: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/sample/sam2-vid_output/frame_3.ply
+hamer_keypoints_path: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/sample/hamer_output/Color_1920x1080_e00000_00054_keypoints_2d.npy
+vitpose_keypoints_path: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/sample/hamer_output/vitpose_keypoints_2d_Color_1920x1080_e00000_00054_right.npy
