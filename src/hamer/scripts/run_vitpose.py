@@ -11,6 +11,7 @@ import numpy as np
 from hamer.vitpose_model import ViTPoseModel
 
 # local imports
+from utils.rgb_utils import load_rgb_images
 from utils.sam2utils import search_folder
 from tqdm import tqdm
 
@@ -28,12 +29,11 @@ detectron2_cfg.train.init_checkpoint = "https://dl.fbaipublicfiles.com/detectron
 for i in range(3):
     detectron2_cfg.model.roi_heads.box_predictors[i].test_score_thresh = 0.25
 detector = DefaultPredictor_Lazy(detectron2_cfg)
-img_paths = [
-    img for end in config.file_type for img in Path(config.img_folder).glob(end)
-]
+images,img_paths = load_rgb_images(config.img_folder, prefix="Color_", return_path=True)
+print(f"Image shape: {images.shape}")
 cpm = ViTPoseModel(device)
 
-for img_path in tqdm(img_paths, desc="Processing images"):
+for i,img_path in tqdm(enumerate(img_paths), desc="Processing images"):
     img_cv2 = cv2.imread(str(img_path))
 
     # Detect humans in image
@@ -53,13 +53,19 @@ for img_path in tqdm(img_paths, desc="Processing images"):
     )
 
     # Use hands based on hand keypoint detections
-    for vitposes in vitposes_out:
+    for idx,vitposes in enumerate(vitposes_out):
         left_hand_keyp = vitposes["keypoints"][-42:-21]
         right_hand_keyp = vitposes["keypoints"][-21:]
         # Rejecting not confident detections
         keyp = right_hand_keyp
         valid = keyp[:, 2] > 0.5
         if sum(valid) > 3:
-            right_string = f"{img_path.stem}_right"
-            keypoints_2d_path = f"{config.out_folder}/vitpose_keypoints_2d_{right_string}"
-            np.save(keypoints_2d_path, right_hand_keyp)
+            # === Save ===
+            original_path = img_paths[i]  # Full path
+            episode_name = os.path.basename(os.path.dirname(original_path))  # e.g., "e0"
+            original_filename = os.path.basename(original_path)  # e.g., "Color_0034.png"
+            save_name = "vitpose_keypoints_2d_" + os.path.splitext(original_filename)[0] + f"_right_{idx}.npy"
+            episode_output_dir = os.path.join(config.vitpose_out_folder, episode_name)
+            os.makedirs(episode_output_dir, exist_ok=True)  # Create folder if it doesn't exist
+            save_path = os.path.join(episode_output_dir, save_name)
+            np.save(save_path, right_hand_keyp)

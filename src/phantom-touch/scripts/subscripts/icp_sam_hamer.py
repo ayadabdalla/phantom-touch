@@ -5,9 +5,6 @@ import trimesh
 import open3d as o3d
 from omegaconf import OmegaConf
 
-# TODO: set up a class that does the downsampling, processing, ICP registration and visualization on top of o3d api
-
-# data_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # get parent directory of the current file
 parent_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 conf = OmegaConf.load(f"{parent_directory}/../conf/icp.yaml")

@@ -67,9 +67,9 @@ def calculate_target_position_and_orientation(hand_keypoints):
 
 # Example usage
 if __name__ == "__main__":
-    hand_keypoints_pcd = np.load("hand_keypoints_pcd.npz")
-    hand_keypoints = hand_keypoints_pcd['points']
-    print(f"hand keypoints pcd length: {len(hand_keypoints)}")
+    hand_keypoints_dict = np.load("hand_keypoints_dict.npz")
+    hand_keypoints = hand_keypoints_dict['points']
+    print(f"hand keypoints dict length: {len(hand_keypoints)}")
     repository_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config = OmegaConf.load(f"{repository_directory}/conf/3d_projection.yaml")
     output_directory = os.path.join(config.trajectory_directory, "target_position_orientation.npz")

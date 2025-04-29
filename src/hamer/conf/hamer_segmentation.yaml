@@ -1,7 +1,8 @@
 experiment_name: handover_collection_1 # Name of the experiment
 checkpoint: /home/epon04yc/phantom-touch/src/hamer/_DATA/hamer_ckpts/checkpoints/hamer.ckpt # Path to pretrained model checkpoint
 img_folder: /mnt/dataset_drive/ayad/phantom-touch/data/recordings/${experiment_name} # Folder with input images
-out_folder: /mnt/dataset_drive/ayad/phantom-touch/data/output/${experiment_name}/hamer_output # Output folder to save rendered results
+hamer_out_folder: /mnt/dataset_drive/ayad/phantom-touch/data/output/${experiment_name}/hamer_output # Output folder to save rendered results
+vitpose_out_folder: /mnt/dataset_drive/ayad/phantom-touch/data/output/${experiment_name}/vitpose_output/episodes # Output folder to save vitpose results
 side_view: true # If set to true, render side view also
 full_frame: true # If set to true, render all people together also
 save_mesh: true # If set to true, save meshes to disk also

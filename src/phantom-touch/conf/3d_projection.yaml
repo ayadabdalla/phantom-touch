@@ -1,12 +1,26 @@
 crop:
   x: 0
   y: 0
-shape: [1080,1920]
+shape: [1080, 1920]
 
-trajectory_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/sample/trajectories
+trajectory_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/trajectories
+recordings_directory: /mnt/dataset_drive/ayad/phantom-touch/data/recordings/handover_collection_1/episodes
+sam2hand_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/sam2hand_output/episodes
+hamer_output_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/hamer_output/episodes
+vitpose_output_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/vitpose_output/episodes
+image_size: 1080
 
-depth_map_path : /mnt/dataset_drive/ayad/phantom-touch/data/recordings/handover_collection_1/sample/extracted_RawDepth_e00000_00054.raw.npy
-color_image_path : /mnt/dataset_drive/ayad/phantom-touch/data/recordings/handover_collection_1/sample/Color_1920x1080_00054.png
-sam2hand_pcd_path: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/sample/sam2-vid_output/frame_3.ply
-hamer_keypoints_path: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/sample/hamer_output/Color_1920x1080_e00000_00054_keypoints_2d.npy
-vitpose_keypoints_path: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/sample/hamer_output/vitpose_keypoints_2d_Color_1920x1080_e00000_00054_right.npy
+masks:
+  use_min_depth: True
+  tcp_z_distance: 0.04 #in m
+  blob_filter: False
+  tolerance_in_mm: 2
+  blob_connectivity: 8
+  wcamera_in_tcp_z: -0.064
+  dups_k: 4 #depth processing related
+  dups_threshold: 10 #in mm #depth processing related
+  k_means_accuracy: 1 #depth processing related
+  k_means_max_iter: 20 #depth processing related
+  k_means_n_init: 20 #depth processing related
+  erode: False
+  erode_kernel_size: 6
