@@ -5,6 +5,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import sieve
+from utils.rgb_utils import load_rgb_images
 
 def sievesamzip_to_mp4_video(sam_out, output_path=None):
     """
@@ -51,17 +52,11 @@ def sievesamzip_to_numpy(sam_out):
 
 
 def filelist_to_mp4sieve(frames_dir, prefix, output_path=None):
-    # convert list of images to mp4
-    images = [
-        img
-        for img in os.listdir(frames_dir)
-        if img.endswith(".png") and img.startswith(prefix)
-    ]
-    images = sorted(images)
+    images, image_paths=load_rgb_images(frames_dir, prefix=prefix, return_path=True)
     print(f"Number of loaded images: {len(images)}")
     images = images[:2]
     print(f"Number of images to be worked on by sieve: {len(images)}")
-    first_frame = cv2.imread(os.path.join(frames_dir, images[0]))
+    first_frame = images[0]
     height, width, layers = first_frame.shape
     frame_size = (width, height)
 
@@ -69,8 +64,8 @@ def filelist_to_mp4sieve(frames_dir, prefix, output_path=None):
     out = cv2.VideoWriter(output_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, frame_size)
 
     # Loop through the images and write them to the video
-    for image in images:
-        img_path = os.path.join(frames_dir, image)
+    for image_path in image_paths:
+        img_path = os.path.join(frames_dir, image_path)
         frame = cv2.imread(img_path)
         out.write(frame)
     out.release()

@@ -63,12 +63,15 @@ points = np.array(
 predictor = build_sam2_video_predictor(
     sam2video_cfg.model_cfg, sam2video_cfg.sam2_checkpoint, device=device
 )
-frame_names = [
-    p
-    for p in os.listdir(sam2video_cfg.video_frames_dir)
-    if os.path.splitext(p)[-1] in [".jpg", ".jpeg", ".JPG", ".JPEG",".png", ".PNG"]
-]  # sam2-videoPredictor requires a directory of JPEG frames with filenames like `<frame_index>.jpg`
-frame_names = sorted(frame_names, key=lambda p: os.path.splitext(p)[0])
+
+frame_names = []
+for root, dirs, files in os.walk(os.path.join(sam2video_cfg.video_frames_dir)):
+    if os.path.basename(root).startswith("e"):
+        for file in files:
+            if file.startswith('Color_') and file.endswith(".png"):
+                frame_names.append(os.path.join(root, file))
+frame_names.sort(key=lambda p: os.path.splitext(p)[0])
+
 inference_state = predictor.init_state(video_path=sam2video_cfg.video_frames_dir)
 predictor.reset_state(inference_state)
 _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
@@ -92,11 +95,10 @@ for out_frame_idx, out_obj_ids, out_mask_logits in predictor.propagate_in_video(
         mask = cv2.cvtColor(mask.astype(np.uint8) * 255, cv2.COLOR_GRAY2RGB)
     mask_frames.append(mask)
 mask_frames = np.array(mask_frames)
-# display the frames one by one
-for i in range(mask_frames.shape[0]):
-    cv2.imshow("mask", mask_frames[i])
-    cv2.waitKey(1)
+
 # save each frame as a separate image
 for i in range(mask_frames.shape[0]):
-    frame_name = os.path.join(output_path, f"frame_{i:04d}.jpg")
+    frame_name = os.path.join(output_path, f"{frame_names[i]}")
+    # check for the word recordings in the filename and replace it with the word output
+    frame_name = frame_name.replace("recordings", "output")
     cv2.imwrite(frame_name, mask_frames[i])

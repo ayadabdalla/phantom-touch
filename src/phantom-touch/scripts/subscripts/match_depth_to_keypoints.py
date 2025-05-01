@@ -3,7 +3,6 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 from utils.data_utils import load_keypoints_grouped_by_frame, load_pcds
-from utils.depth_correction_utils import apply_depth_correction
 from utils.depth_utils import load_raw_depth_images
 from utils.hw_camera import fx, fy, cx, cy
 import open3d as o3d
@@ -93,10 +92,10 @@ def calculate_target_position_and_orientation(hand_keypoints):
     # Combine all points from thumb and index finger
     plane_points = np.vstack((thumb, index_finger))
 
-    # Calculate centroid
+    # Fit a plane to the points using Singular Value Decomposition (SVD)
     centroid = np.mean(plane_points, axis=0)
-
-    # Center the points
+    _, _, vh = np.linalg.svd(plane_points - centroid)
+        # Center the points
     centered_points = plane_points - centroid
 
     # Singular Value Decomposition
@@ -111,8 +110,11 @@ def calculate_target_position_and_orientation(hand_keypoints):
     # ensure the normal vector points in the negative z direction
     if normal_vector[2] > 0:
         normal_vector = -normal_vector
+    # the principal axis is the thumb, fit a line through the first 4 points using pca
+    thumb_axis = thumb[3] - thumb[0]
+    thumb_axis = thumb_axis / np.linalg.norm(thumb_axis)
 
-    return target_position, normal_vector, plane_points
+    return target_position, normal_vector, plane_points, thumb_axis
 
 
 # load config
@@ -159,6 +161,8 @@ visualize_pcds = []
 target_positions_per_episode = []
 normal_vectors_per_episode = []
 keypoints_per_episode = []
+thumb_vector_per_episode = []
+
 previous_episode = os.path.basename(os.path.dirname(color_paths[0]))
 for idx, (depth_map, color_frame, color_path, keypoints_per_frame, sam2_pcd) in tqdm(
     enumerate(
@@ -173,12 +177,14 @@ for idx, (depth_map, color_frame, color_path, keypoints_per_frame, sam2_pcd) in 
         target_positions_per_episode = []
         normal_vectors_per_episode = []
         keypoints_per_episode = []
+        thumb_vector_per_episode = []
         visualize_pcds = []
     episode = os.path.basename(os.path.dirname(color_path))
     sam2_pcd = sam2_pcd[0]
     chamfer_distances = []
     target_positions_per_frame = []
     normal_vectors_per_frame = []
+    thumb_vectors_per_frame = []
     pcds_per_frame = []
     for i, keypoints2d in enumerate(keypoints_per_frame):
         invalid_keypoint = False
@@ -245,11 +251,12 @@ for idx, (depth_map, color_frame, color_path, keypoints_per_frame, sam2_pcd) in 
         chamfer_distance = np.asarray(chamfer_distance)
         chamfer_distance = np.mean(chamfer_distance)
         chamfer_distances.append(chamfer_distance)
-        target_position, normal_vector, _ = calculate_target_position_and_orientation(
+        target_position, normal_vector, _, thumb_vector = calculate_target_position_and_orientation(
             points
         )
         target_positions_per_frame.append(target_position)
         normal_vectors_per_frame.append(normal_vector)
+        thumb_vectors_per_frame.append(thumb_vector)
     if invalid_keypoint:
         continue
     # filter the pcd per frame based on the lowest chamfer distance
@@ -260,6 +267,9 @@ for idx, (depth_map, color_frame, color_path, keypoints_per_frame, sam2_pcd) in 
     target_positions_per_episode.append(target_position)
     normal_vector = normal_vectors_per_frame[min_chamfer_index]
     normal_vectors_per_episode.append(normal_vector)
+    thumb_vector = thumb_vectors_per_frame[min_chamfer_index]
+    thumb_vector = thumb_vector / np.linalg.norm(thumb_vector)
+    thumb_vector_per_episode.append(thumb_vector)
     pcd = pcds_per_frame[min_chamfer_index]
     keypoints = np.asarray(pcd.points)
     keypoints_per_episode.append(keypoints)
@@ -277,6 +287,7 @@ for idx, (depth_map, color_frame, color_path, keypoints_per_frame, sam2_pcd) in 
         positions=target_positions_per_episode,
         normals=normal_vectors_per_episode,
         keypoints=keypoints_per_episode,
+        thumb_vectors=thumb_vector_per_episode,
     )
     # # normal_vector = normal_vector / np.linalg.norm(normal_vector) * 0.1
     # # pcd.points = o3d.utility.Vector3dVector(np.vstack((points, target_position + normal_vector)))
