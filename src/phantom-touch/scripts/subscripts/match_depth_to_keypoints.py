@@ -162,8 +162,10 @@ target_positions_per_episode = []
 normal_vectors_per_episode = []
 keypoints_per_episode = []
 thumb_vector_per_episode = []
+invalid_keypoints_per_episode = []
 
 previous_episode = os.path.basename(os.path.dirname(color_paths[0]))
+dynamic_episode_index = 0
 for idx, (depth_map, color_frame, color_path, keypoints_per_frame, sam2_pcd) in tqdm(
     enumerate(
         zip(numpy_depth, numpy_color, color_paths, vitpose_keypoints2d, sam2_pcds)
@@ -178,7 +180,9 @@ for idx, (depth_map, color_frame, color_path, keypoints_per_frame, sam2_pcd) in 
         normal_vectors_per_episode = []
         keypoints_per_episode = []
         thumb_vector_per_episode = []
+        invalid_keypoints_per_episode = []
         visualize_pcds = []
+        dynamic_episode_index = 0
     episode = os.path.basename(os.path.dirname(color_path))
     sam2_pcd = sam2_pcd[0]
     chamfer_distances = []
@@ -196,6 +200,7 @@ for idx, (depth_map, color_frame, color_path, keypoints_per_frame, sam2_pcd) in 
             print(
                 f"Keypoints out of bounds for frame {color_path}, hand {i} skipping..."
             )
+            invalid_keypoint = True
             continue
 
         # create depth keypoints map
@@ -208,27 +213,17 @@ for idx, (depth_map, color_frame, color_path, keypoints_per_frame, sam2_pcd) in 
         # create points and colors
         points = np.zeros((len(keypoints2d), 3))
         colors = np.zeros((len(keypoints2d), 3))
-        for i, (x, y) in enumerate(keypoints2d):
+        for j, (x, y) in enumerate(keypoints2d):
             z = depth_map[y, x]
-            if i == 4:
+            if j == 4:
                 if z <= 250 or z >=5000:
                     invalid_keypoint = True
-                # else:
-                #     z = np.nanmedian(
-                #         depth_keypoints_map[y - 10 : y + 10, x - 10 : x + 10]
-                #     )
-                colors[i] = [1, 0, 0]
-            elif i == 8:
+            elif j == 8:
                 if z <= 250 or z >=5000:
                     invalid_keypoint = True
-                # else:
-                #     z = np.nanmedian(
-                #         depth_keypoints_map[y - 10 : y + 10, x - 10 : x + 10]
-                #     )
-                colors[i] = [1, 0.5, 0.5]
             else:
-                colors[i] = [1, 1, 1]
-            points[i] = [x, y, z]
+                colors[j] = [1, 1, 1]
+            points[j] = [x, y, z]
 
         # convert to camera coordinates
         points[:, 0] = (points[:, 0] - cx) * points[:, 2] / fx / 1000.0
@@ -258,7 +253,9 @@ for idx, (depth_map, color_frame, color_path, keypoints_per_frame, sam2_pcd) in 
         normal_vectors_per_frame.append(normal_vector)
         thumb_vectors_per_frame.append(thumb_vector)
     if invalid_keypoint:
+        invalid_keypoints_per_episode.append(dynamic_episode_index)
         continue
+    dynamic_episode_index += 1
     # filter the pcd per frame based on the lowest chamfer distance
 
     min_chamfer_distance = min(chamfer_distances)
@@ -281,6 +278,7 @@ for idx, (depth_map, color_frame, color_path, keypoints_per_frame, sam2_pcd) in 
     points = np.asarray(pcd.points)
     # # save point cloud
     save_name = f"hand_keypoints_{episode}_right.npz"
+    print(len(target_positions_per_episode))
     os.makedirs(os.path.join(trajectory_root, episode), exist_ok=True)
     np.savez_compressed(
         os.path.join(trajectory_root, episode, save_name),
@@ -288,6 +286,7 @@ for idx, (depth_map, color_frame, color_path, keypoints_per_frame, sam2_pcd) in 
         normals=normal_vectors_per_episode,
         keypoints=keypoints_per_episode,
         thumb_vectors=thumb_vector_per_episode,
+        invalid_keypoints=invalid_keypoints_per_episode, #TODO: remove this and save only the valid frame numbers
     )
     # # normal_vector = normal_vector / np.linalg.norm(normal_vector) * 0.1
     # # pcd.points = o3d.utility.Vector3dVector(np.vstack((points, target_position + normal_vector)))
@@ -318,41 +317,6 @@ for pcd in sam2_pcds:
 #                                   width=1024,
 #                                   height=768,
 #                                   window_name="Simple PointCloud Viewer")
-
-import open3d as o3d
-import numpy as np
-
-full_visualization_pcds = []
-materials = []
-
-for pcd, sam in zip(visualize_pcds, sams):
-    # pcd - normal
-    full_visualization_pcds.append(pcd)
-    materials.append(None)  # default material for opaque pcd
-
-    # sam - semi-transparent
-    # sam = sam.clone()  # clone to avoid modifying original
-    mat = o3d.visualization.rendering.MaterialRecord()
-    mat.shader = "defaultUnlit"  # important: use unlit shader
-    mat.base_color = [1.0, 0.0, 0.0, 0.4]  # R, G, B, Alpha (0.4 transparent red)
-    mat.point_size = 3.0
-
-    full_visualization_pcds.append(sam)
-    materials.append(mat)
-
-# Add coordinate frame (no transparency)
-full_visualization_pcds.append(
-    o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
-)
-materials.append(None)
-
-# Visualization using `draw`
-o3d.visualization.draw(
-    zip(full_visualization_pcds, materials),
-    show_skybox=False,
-    width=1024,
-    height=768,
-)
 
 
 # save merged point cloud
