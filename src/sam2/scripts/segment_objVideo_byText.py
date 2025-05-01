@@ -101,4 +101,8 @@ for i in range(mask_frames.shape[0]):
     frame_name = os.path.join(output_path, f"{frame_names[i]}")
     # check for the word recordings in the filename and replace it with the word output
     frame_name = frame_name.replace("recordings", "output")
+    frame_name = frame_name.replace("Color_", "Mask_")
+    frame_name = frame_name.replace("episodes", "sam2-vid_output/episodes")
+    os.makedirs(os.path.dirname(frame_name), exist_ok=True)
+    print(f"Saving {frame_name}")
     cv2.imwrite(frame_name, mask_frames[i])

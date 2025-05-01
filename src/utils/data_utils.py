@@ -25,7 +25,7 @@ def load_keypoints_grouped_by_frame(base_dir, prefix="vitpose_", return_path=Fal
                 if file.startswith(prefix) and file.endswith(".npy"):
                     full_path = os.path.join(root, file)
                     # Extract frame id: the part after 'eXXXXX_' and before '_right'
-                    match = re.search(r'e\d+_(\d+)_right', file)
+                    match = re.search(r'\d+_(\d+)_right', file)
                     if match:
                         frame_id = match.group(1)
                         frame_to_paths[frame_id].append(full_path)
