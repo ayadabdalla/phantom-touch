@@ -3,6 +3,7 @@ import os
 import glob
 
 from utils.rgb_utils import natural_key
+from tqdm import tqdm
 def load_raw_depth_images(base_dir, shape):
     # depth_paths = glob.glob(os.path.join(base_dir, "e*", "RawDepth_*.raw"))
     depth_paths = []
@@ -13,7 +14,7 @@ def load_raw_depth_images(base_dir, shape):
                     depth_paths.append(os.path.join(root, file))
     depth_paths = sorted(depth_paths, key=natural_key)  # <--- natural sort
     depth_images = []
-    for path in depth_paths:
+    for path in tqdm(depth_paths, desc="reading depth images"):
         with open(path, "rb") as f:
             raw = np.fromfile(f, dtype=np.uint16)
             raw = raw[:shape[0]*shape[1]]

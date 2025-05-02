@@ -4,21 +4,14 @@ import os
 import numpy as np
 import glob
 
+from tqdm import tqdm
+
 def fetch_rgb_video(video_path):
     # Load the mask video
     cap_vid = cv2.VideoCapture(video_path)
     if not cap_vid.isOpened():
         raise Exception(f"Could not open video file: {video_path}")
     return cap_vid
-
-# def load_rgb_images(rgb_directory_path, prefix=None):
-#     rgb_images = []
-#     for filename in sorted(os.listdir(rgb_directory_path)):
-#         if filename.endswith(".jpg") or filename.endswith(".png"):
-#             img_path = os.path.join(rgb_directory_path, filename)
-#             img = cv2.imread(img_path)
-#             rgb_images.append(img)
-#     return np.array(rgb_images)
 
 
 def natural_key(string_):
@@ -36,7 +29,7 @@ def load_rgb_images(base_dir, prefix="Color_", return_path=False):
                     image_paths.append(os.path.join(root, file))
 
     image_paths = sorted(image_paths, key=natural_key)  # <--- natural sort
-    images = [cv2.imread(p) for p in image_paths]
+    images = [cv2.imread(p) for p in tqdm(image_paths, desc="reading images")]
     if return_path:
         return np.stack(images, axis=0), image_paths
     else:

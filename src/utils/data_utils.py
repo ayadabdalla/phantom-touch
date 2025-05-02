@@ -10,6 +10,7 @@ import os
 import numpy as np
 import re
 from collections import defaultdict
+from tqdm import tqdm
 
 def natural_key(string_):
     """Sort helper that handles numbers in filenames correctly."""
@@ -35,8 +36,7 @@ def load_keypoints_grouped_by_frame(base_dir, prefix="vitpose_", return_path=Fal
 
     keypoints_grouped = []
     paths_grouped = []
-
-    for frame_id in sorted_frame_ids:
+    for frame_id in tqdm(sorted_frame_ids, desc="reading keypoints grouped by frame"):
         # Sort the paths for each frame naturally (e.g., right_0, right_1, etc.)
         paths = sorted(frame_to_paths[frame_id], key=natural_key)
         keypoints = [np.load(p) for p in paths]
@@ -71,7 +71,7 @@ def load_pcds(base_dir, prefix="Color_", return_path=False):
     sorted_pcd_paths = sorted(pcds_paths, key=natural_key)
     # load the pcds through o3d
     pcds = []
-    for pcd_path in sorted_pcd_paths:
+    for pcd_path in tqdm(sorted_pcd_paths, desc="reading PCD files"):
         pcd = o3d.io.read_point_cloud(pcd_path)
         pcds.append(pcd)
     pcds = np.stack(pcds, axis=0)  # Shape: (num_views, ...)
@@ -80,38 +80,3 @@ def load_pcds(base_dir, prefix="Color_", return_path=False):
         return pcds, pcds_paths
     else:
         return pcds
-
-def retrieve_data_sample_path(
-    data_source,
-    experiment_name,
-    experiment_specifics,
-    data_ontology,
-    sample_id,
-    sub_data_sample_id=None,
-    data_sample_name=None,
-    data_extension=None,
-):
-    """
-    Function to retrieve the data sample from the specified path.
-    """
-    # Construct the path to the data sample
-    repository_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    data_sample_name = (
-        f"{data_sample_name}_{sample_id}_{sub_data_sample_id}"
-        if sub_data_sample_id
-        else f"{data_sample_name}_{sample_id}"
-    )
-    data_extension = "obj"
-
-    path = os.path.join(
-        repository_root,
-        "assets",
-        "data",
-        data_source,
-        experiment_name,
-        experiment_specifics,
-        data_ontology,
-        f"{data_sample_name}.{data_extension}",
-    )
-
-    return path
