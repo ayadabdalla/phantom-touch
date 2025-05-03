@@ -4,6 +4,8 @@ import cv2
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
+from utils.phantomutils import filter_trajectories, normal_up_to_rotation_matrix
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -18,65 +20,6 @@ from rcsss.envs.utils import (
     default_fr3_sim_robot_cfg,
     default_mujoco_cameraset_cfg,
 )
-
-def filter_trajectories(trajectories):
-    # do exponential average on only the z axis
-    filtered_positions = []
-    filtered_normals = []
-    filtered_thumbs = []
-    filtered_grips = []
-    for trajectory in trajectories:
-        data = np.load(trajectory)
-        positions = data["positions"]
-        normals = data["normals"]
-        thumbs = data["thumb_vectors"]
-        keypoints = data["keypoints"]
-        grips = np.linalg.norm(positions - keypoints[:, 8, :3], axis=1)
-        # normalize the grips
-        grips = grips / np.max(grips)
-        filtered_z = np.zeros_like(positions[:, 2])
-        # expect the next 2 steps and compare to the actual and if it's too far ignore it
-        indeces = []
-        for i in range(0, len(positions) - 2):
-            filtered_z[i] = 0.8 * positions[i + 2, 2] + 0.2 * positions[i + 1, 2]
-            # Check if the current z is too far from the expected z
-            if abs(positions[i, 2] - filtered_z[i]) > 0.1:
-                # store index of the filtered z
-                indeces.append(i)
-        positions = np.delete(positions, indeces, axis=0)
-        normals = np.delete(normals, indeces, axis=0)
-        thumbs = np.delete(thumbs, indeces, axis=0)
-        grips = np.delete(grips, indeces, axis=0)
-        print(f"Filtered out: {len(indeces)}")
-        filtered_positions.append(positions)
-        filtered_thumbs.append(thumbs)
-        filtered_normals.append(normals)
-        filtered_grips.append(grips)
-    return filtered_positions, filtered_normals, filtered_thumbs, indeces, filtered_grips
-def normal_up_to_rotation_matrix(normal, up=None, eps=1e-6):
-    # Normalize the input normal vector
-    normal = -normal / np.linalg.norm(normal, 2)
-
-    # Set the z-axis as the provided normal vector
-    basis_three = up
-
-    # Calculate a perpendicular vector to the z-axis for the x-axis
-    # basis_one = np.cross(np.array([0, 0, 1]), basis_three)
-    basis_one = normal
-    basis_one = basis_one / np.linalg.norm(basis_one, 2)
-
-    # if basis one is zero vector use x-axis
-    if np.linalg.norm(basis_one, 2) == 0:
-        print("basis one is zero vector")
-        basis_one = np.array([1, 0, 0])
-
-    # Calculate the y-axis as the cross product of the z-axis and x-axis
-    basis_two = np.cross(basis_three, basis_one)
-    basis_two = basis_two / np.linalg.norm(basis_two, 2)
-
-    # Construct the rotation matrix
-    rot = np.vstack((basis_one, basis_two, basis_three)).T
-    return rot
 
 def main():
 
@@ -95,13 +38,13 @@ def main():
         print(env.unwrapped.robot.get_cartesian_position())
 
         trajectories = [
-            "/home/ayad/ontouch/phantomtouch/phantomdata/handover/trajectories/e14/hand_keypoints_e14_right.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/trajectories/e13/hand_keypoints_e13_right.npz",
         ] 
         # filter trajectories
         positions, rotations, thumbs,indeces,grips = filter_trajectories(trajectories)
-        extrinsics = np.load("/home/ayad/ontouch/calibration/data/orbbec/robotbase_camera_transform_orbbec_fr4.npy")
+        extrinsics = np.load("/home/epon04yc/phantom-touch/src/phantom-touch/data/robotbase_camera_transform_orbbec_fr4.npy")
         # load the rgb image from the directory
-        directory = f"/home/ayad/ontouch/phantomtouch/phantomdata/handover/inpainting_output/episodes/e14"
+        directory = f"/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/inpainting_output/episodes/e13"
         # get the files in the directory
         files = os.listdir(directory)
         # get only the files that end with .png
@@ -112,7 +55,6 @@ def main():
         data = np.load(trajectories[0])
         valid_indices = data["valid_frames"]
         print("valid indices", len(valid_indices))
-        print(len(positions[0]), "positions")
 
         # if valid index string exists in file name then keep it
         files = [f for f in files if any(str(i) in f for i in valid_indices)]
@@ -120,6 +62,8 @@ def main():
         # files = [files[i] for i in range(len(files)) if i in valid_indices]
         files = [files[i] for i in range(len(files)) if i not in indeces]
         # convert positions to robot base frame
+        print(len(positions[0]), "positions")
+        print(len(files), "images")
         positions = positions[0]
         rotations = rotations[0]
         thumbs = thumbs[0]
@@ -195,6 +139,8 @@ def main():
             # Convert back to 8-bit and BGR for display
             overlayed_image = (overlayed_image * 255).astype(np.uint8)
             images.append(overlayed_image)
+            cv2.imshow("Overlayed Image", overlayed_image)
+            cv2.waitKey(1)
 
 if __name__ == "__main__":
     main()
