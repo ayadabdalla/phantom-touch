@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from utils.phantomutils import filter_trajectories, normal_up_to_rotation_matrix
+from utils.phantomutils import filter_trajectories, normal_principal_to_rotation_matrix
 
 
 logger = logging.getLogger(__name__)
@@ -27,24 +27,25 @@ def main():
 
     with resource_manger:
         env = fr3_sim_env(
-            control_mode=ControlMode.CARTESIAN_TQuart,
+            # control_mode=ControlMode.CARTESIAN_TQuart,
+            control_mode=ControlMode.CARTESIAN_TRPY,
             robot_cfg=default_fr3_sim_robot_cfg(),
             collision_guard=False,
             gripper_cfg=default_fr3_sim_gripper_cfg(),
             camera_set_cfg=default_mujoco_cameraset_cfg(),
         )
-        env.get_wrapper_attr("sim").open_gui()
+        # env.get_wrapper_attr("sim").open_gui()
         obs,_=env.reset()
-        print(env.unwrapped.robot.get_cartesian_position())
+        # print(env.unwrapped.robot.get_cartesian_position())
 
         trajectories = [
-            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/trajectories/e13/hand_keypoints_e13_right.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/trajectories/e0/hand_keypoints_e0_right.npz",
         ] 
         # filter trajectories
         positions, rotations, thumbs,indeces,grips = filter_trajectories(trajectories)
         extrinsics = np.load("/home/epon04yc/phantom-touch/src/phantom-touch/data/robotbase_camera_transform_orbbec_fr4.npy")
         # load the rgb image from the directory
-        directory = f"/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/inpainting_output/episodes/e13"
+        directory = f"/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/inpainting_output/episodes/e0"
         # get the files in the directory
         files = os.listdir(directory)
         # get only the files that end with .png
@@ -84,35 +85,37 @@ def main():
         for i in range(rotations.shape[0]):
             normal = rotations[i]
             thumb = thumbs[i]
-            rotation_matrix = normal_up_to_rotation_matrix(normal, thumb)
+            rotation_matrix = normal_principal_to_rotation_matrix(normal, thumb)
             rotation_matrices.append(rotation_matrix)
 
-        rotation_matrix = np.array([
-            [-0.00617474, -0.999715, 0.023071],
-            [0.0317128, -0.0232556, -0.999226],
-            [0.999478, -0.00543832, 0.0318473]
-        ])
-        r = R.from_matrix(rotation_matrix)
-        target_orn = r.as_quat(scalar_first=True)  # Convert rotation matrix to quaternion
-        # put w first
-        if target_orn[0] < 0:
-            target_orn = -target_orn
-            print("quaternion is negative")
-        else:
-            print("quaternion is already positive")
+        # rotation_matrix = np.array([
+        #     [-0.00617474, -0.999715, 0.023071],
+        #     [0.0317128, -0.0232556, -0.999226],
+        #     [0.999478, -0.00543832, 0.0318473]
+        # ])
+        # r = R.from_matrix(rotation_matrix)
+        # target_orn = r.as_quat(scalar_first=True)  # Convert rotation matrix to quaternion
+        # # put w first
+        # if target_orn[0] < 0:
+        #     target_orn = -target_orn
+        #     print("quaternion is negative")
+        # else:
+        #     print("quaternion is already positive")
 
 
-        act = {"tquart": [0.59,0.18,0.24, target_orn[0], target_orn[1], target_orn[2], target_orn[3]], "gripper": 1}
-        # rollout trajectories
-        # generate positions.shape[0] copies of the target orn
-        obs,_,_,_,_= env.step(act)
+        # act = {"tquart": [0.59,0.18,0.24, target_orn[0], target_orn[1], target_orn[2], target_orn[3]], "gripper": 1}
+        # # rollout trajectories
+        # # generate positions.shape[0] copies of the target orn
+        # obs,_,_,_,_= env.step(act)
 
         images = []
         for i in range(positions.shape[0]):
             # rotation_matrix to quaternion
             r = R.from_matrix(rotation_matrices[i])
-            target_orn = r.as_quat(scalar_first=False)  # Convert rotation matrix to quaternion
-            act = {"tquart": [positions[i, 0], positions[i, 1], positions[i, 2], target_orn[0], target_orn[1], target_orn[2], target_orn[3]], "gripper": grips[i]}
+            # target_orn = r.as_quat(scalar_first=False)  # Convert rotation matrix to quaternion
+            target_orn = r.as_euler('xyz', degrees=False)
+            # act = {"tquart": [positions[i, 0], positions[i, 1], positions[i, 2], target_orn[0], target_orn[1], target_orn[2], target_orn[3]], "gripper": grips[i]}
+            act = {"xyzrpy": [positions[i, 0], positions[i, 1], positions[i, 2], target_orn[0], target_orn[1], target_orn[2]], "gripper": grips[i]}
             obs,_,_,_,_= env.step(act)
             image = obs["frames"]["orbbec"]['rgb']
 

@@ -4,78 +4,78 @@ from scipy import linalg
 from scipy.spatial.transform import Rotation as R
 
 
-# def calculate_target_position_and_orientation(hand_keypoints):
-#     """
-#     Calculate the target position as the midpoint between the thumb tip and index finger tip,
-#     and the target orientation by fitting a plane through the points of the thumb and index finger.
+def calculate_target_position_and_orientation(hand_keypoints):
+    """
+    Calculate the target position as the midpoint between the thumb tip and index finger tip,
+    and the target orientation by fitting a plane through the points of the thumb and index finger.
 
-#     Parameters:
-#     -----------
-#     hand_keypoints : numpy.ndarray or list
-#         Array or list of shape (21, 3) containing 3D coordinates of 21 hand keypoints.
-#         Keypoints are organized in the following order:
-#         0: Wrist
-#         1-4: Thumb (from base to tip)
-#         5-8: Index finger (from base to tip)
-#         9-12: Middle finger (from base to tip)
-#         13-16: Ring finger (from base to tip)
-#         17-20: Pinky finger (from base to tip)
+    Parameters:
+    -----------
+    hand_keypoints : numpy.ndarray or list
+        Array or list of shape (21, 3) containing 3D coordinates of 21 hand keypoints.
+        Keypoints are organized in the following order:
+        0: Wrist
+        1-4: Thumb (from base to tip)
+        5-8: Index finger (from base to tip)
+        9-12: Middle finger (from base to tip)
+        13-16: Ring finger (from base to tip)
+        17-20: Pinky finger (from base to tip)
 
-#     Returns:
-#     --------
-#     tuple: (target_position, normal_vector, plane_points, thumb_axis)
-#         target_position: numpy.ndarray of shape (3,) - midpoint between the thumb tip and index finger tip.
-#         normal_vector: numpy.ndarray of shape (3,) - unit normal vector of the fitted plane.
-#         plane_points: numpy.ndarray of shape (8, 3) - points used for plane fitting (thumb and index finger points).
-#         thumb_axis: numpy.ndarray of shape (3,) - unit vector representing the principal axis of the thumb.
-#     """
-#     # Validate input
-#     if not isinstance(hand_keypoints, np.ndarray):
-#         hand_keypoints = np.array(hand_keypoints)
+    Returns:
+    --------
+    tuple: (target_position, normal_vector, plane_points, thumb_axis)
+        target_position: numpy.ndarray of shape (3,) - midpoint between the thumb tip and index finger tip.
+        normal_vector: numpy.ndarray of shape (3,) - unit normal vector of the fitted plane.
+        plane_points: numpy.ndarray of shape (8, 3) - points used for plane fitting (thumb and index finger points).
+        thumb_axis: numpy.ndarray of shape (3,) - unit vector representing the principal axis of the thumb.
+    """
+    # Validate input
+    if not isinstance(hand_keypoints, np.ndarray):
+        hand_keypoints = np.array(hand_keypoints)
 
-#     if hand_keypoints.shape != (21, 3):
-#         raise ValueError(
-#             f"Expected hand keypoints of shape (21, 3), got {hand_keypoints.shape}"
-#         )
+    if hand_keypoints.shape != (21, 3):
+        raise ValueError(
+            f"Expected hand keypoints of shape (21, 3), got {hand_keypoints.shape}"
+        )
 
-#     # Extract index finger and thumb keypoints
-#     index_finger = hand_keypoints[5:9]  # indices 5-8
-#     thumb = hand_keypoints[1:5]  # indices 1-4
+    # Extract index finger and thumb keypoints
+    index_finger = hand_keypoints[5:9]  # indices 5-8
+    thumb = hand_keypoints[1:5]  # indices 1-4
 
-#     # 1. Calculate target position (pt) - midpoint between thumb tip and index tip
-#     thumb_tip = thumb[3]  # The 4th point of thumb (index 4 in original array)
-#     index_tip = index_finger[
-#         3
-#     ]  # The 4th point of index finger (index 8 in original array)
-#     target_position = (thumb_tip + index_tip) / 2
+    # 1. Calculate target position (pt) - midpoint between thumb tip and index tip
+    thumb_tip = thumb[3]  # The 4th point of thumb (index 4 in original array)
+    index_tip = index_finger[
+        3
+    ]  # The 4th point of index finger (index 8 in original array)
+    target_position = (thumb_tip + index_tip) / 2
 
-#     # 2. Calculate target orientation by fitting a plane through thumb and index finger points
-#     # Combine all points from thumb and index finger
-#     plane_points = np.vstack((thumb, index_finger))
+    # 2. Calculate target orientation by fitting a plane through thumb and index finger points
+    # Combine all points from thumb and index finger
+    plane_points = np.vstack((thumb, index_finger))
 
-#     # Fit a plane to the points using Singular Value Decomposition (SVD)
-#     centroid = np.mean(plane_points, axis=0)
-#     _, _, vh = np.linalg.svd(plane_points - centroid)
-#         # Center the points
-#     centered_points = plane_points - centroid
+    # Fit a plane to the points using Singular Value Decomposition (SVD)
+    centroid = np.mean(plane_points, axis=0)
+    _, _, vh = np.linalg.svd(plane_points - centroid)
+        # Center the points
+    centered_points = plane_points - centroid
 
-#     # Singular Value Decomposition
-#     u, s, vh = linalg.svd(centered_points)
+    # Singular Value Decomposition
+    u, s, vh = linalg.svd(centered_points)
 
-#     # The normal vector to the plane is the last singular vector
-#     normal_vector = vh[2, :]
+    # The normal vector to the plane is the last singular vector
+    normal_vector = vh[2, :]
 
-#     # Normalize the vector to unit length
-#     normal_vector = normal_vector / np.linalg.norm(normal_vector)
+    # Normalize the vector to unit length
+    normal_vector = normal_vector / np.linalg.norm(normal_vector)
 
-#     # ensure the normal vector points in the negative z direction
-#     if normal_vector[2] > 0:
-#         normal_vector = -normal_vector
-#     # the principal axis is the thumb, fit a line through the first 4 points using pca
-#     thumb_axis = thumb[3] - thumb[0]
-#     thumb_axis = thumb_axis / np.linalg.norm(thumb_axis)
+    # ensure the normal vector points in the negative z direction
+    if normal_vector[2] > 0:
+        normal_vector = -normal_vector
+    # the principal axis is the thumb, fit a line through the first 4 points using pca
+    thumb_axis = thumb[3] - thumb[0]
+    thumb_axis = thumb_axis / np.linalg.norm(thumb_axis)
 
-#     return target_position, normal_vector, plane_points, thumb_axis
+    return target_position, normal_vector, plane_points, thumb_axis
 
 
 def calculate_action(hand_keypoints,extrinsics):
@@ -120,19 +120,26 @@ def calculate_action(hand_keypoints,extrinsics):
     # ensure the normal vector points in the negative z direction
     if normal_vector[2] > 0:
         normal_vector = -normal_vector
-    # the principal axis is the thumb, fit a line through the first 4 points using pca
     thumb_axis = thumb[3] - thumb[0]
     thumb_axis = thumb_axis / np.linalg.norm(thumb_axis)
 
+    # # convert to robot base frame
+    normal_vector = np.concatenate([normal_vector, np.zeros((1))], axis=0)
+    thumb_axis = np.concatenate([thumb_axis, np.zeros((1))], axis=0)
+    thumb_axis = np.dot(extrinsics, thumb_axis)
+    normal_vector = np.dot(extrinsics, normal_vector)
+    thumb_axis = thumb_axis[:3]
+    normal_vector = normal_vector[:3]
+    target_position = np.concatenate([target_position, np.ones((1))], axis=0)
+    target_position = np.dot(
+        extrinsics, target_position
+    )
+
+
+    target_position = target_position[:3]
     rot_matrix = normal_principal_to_rotation_matrix(
         normal_vector, thumb_axis
     )
-    # convert to robot base
-    target_position = np.dot(
-        extrinsics[:3,:3], target_position
-    ) + extrinsics[:3, 3]
-    rot_matrix = np.dot(extrinsics[:3, :3],rot_matrix)
-
     r = R.from_matrix(rot_matrix)
     target_orn = r.as_euler(
         "xyz", degrees=False
@@ -219,6 +226,48 @@ def filter_trajectories(trajectories):
         filtered_thumbs,
         indeces,
         filtered_grips,
+    )
+
+def filter_episode(npz_file):
+    # do exponential average on only the z axis
+    action=np.array(npz_file["action"]).reshape(-1, 7)
+    image_0 = np.array(npz_file["image_0"]).reshape(-1, 240, 432, 3)
+    state = np.array(npz_file["state"]).reshape(-1, 14)
+    keypoints = np.array(npz_file["keypoints"]).reshape(-1, 21, 3)
+    filtered_xyz = np.zeros_like(action[:, :3])
+    filtered_euler = np.zeros_like(action[:, 3:6])
+    indeces = set()
+    for i in range(0, len(action) - 2):
+        # Smooth position (x, y, z)
+        filtered_xyz[i] = 0.5 * action[i + 2, :3] + 0.5 * action[i + 1, :3]
+
+        # Smooth Euler angles with wrap-around consideration
+        raw_euler = np.stack([action[i + 1, 3:6], action[i + 2, 3:6]], axis=0)
+        filtered_euler[i] = np.arctan2(np.sin(raw_euler).mean(axis=0), np.cos(raw_euler).mean(axis=0))
+
+        # Check for position anomalies
+        pos_diffs = np.abs(action[i, :3] - filtered_xyz[i])
+        
+        # Check for angle anomalies using shortest angular distance
+        angle_diffs = np.abs(np.arctan2(np.sin(action[i, 3:6] - filtered_euler[i]),
+                                        np.cos(action[i, 3:6] - filtered_euler[i])))
+
+        if np.any(pos_diffs > 0.1) or np.any(angle_diffs > 0.5):
+            indeces.add(i)
+    indeces = sorted(indeces)
+    action = np.delete(action, indeces, axis=0)
+    image_0 = np.delete(image_0, indeces, axis=0)
+    state = np.delete(state, indeces, axis=0)
+    keypoints = np.delete(keypoints, indeces, axis=0)
+    print(f"Filtered out: {len(indeces)}")
+    data ={
+        "action": action,
+        "image_0": image_0,
+        "state": state,
+        "keypoints": keypoints,
+    }
+    return (
+        data
     )
 
 

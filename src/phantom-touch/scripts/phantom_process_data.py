@@ -6,7 +6,7 @@ from utils.data_utils import load_keypoints_grouped_by_frame, load_pcds
 from utils.depth_utils import load_raw_depth_images
 from utils.hw_camera import fx, fy, cx, cy
 import open3d as o3d
-from utils.phantomutils import calculate_action, overlay_image
+from utils.phantomutils import calculate_action, filter_episode, overlay_image
 from omegaconf import OmegaConf
 import os
 from utils.rgb_utils import load_rgb_images
@@ -27,7 +27,7 @@ recordings_root = config.recordings_directory
 vitpose_root = config.vitpose_output_directory
 sam2hand_root = config.sam2hand_directory
 inpainting_root = config.inpainting_directory
-
+experiment_name = "handover_collection_1" #TODO: include in config
 
 # === Load Data ===
 # Load color images and their paths
@@ -60,7 +60,6 @@ print(
     {inpainted_images.shape} of inpainted images"
 )
 
-
 # === Process Data ===
 # Initialize lists to store data for each episode
 keypoints_per_episode = []
@@ -68,6 +67,7 @@ actions_per_episode = []
 images_per_episode = []
 states_per_episode = []
 previous_episode = os.path.basename(os.path.dirname(color_paths[0]))
+
 env = fr3_sim_env(
     control_mode=ControlMode.CARTESIAN_TRPY,
     robot_cfg=default_fr3_sim_robot_cfg(),
@@ -75,7 +75,6 @@ env = fr3_sim_env(
     gripper_cfg=default_fr3_sim_gripper_cfg(),
     camera_set_cfg=default_mujoco_cameraset_cfg(),
 )
-env.get_wrapper_attr("sim").open_gui()
 obs, _ = env.reset()
 
 # start data generation
@@ -102,11 +101,34 @@ for idx, (
 ):
     episode = os.path.basename(os.path.dirname(color_path))
     frame_index = os.path.splitext(color_path)[0].split("_")[-1]
-    if episode != previous_episode:
+    if episode != previous_episode or idx == numpy_depth.shape[0] - 1:
+        # discard the last image
+        images_per_episode = images_per_episode[:-1]
+        keypoints_per_episode = keypoints_per_episode[:-1]
+        states_per_episode = states_per_episode[:-1]
+        actions_per_episode = actions_per_episode[1:]
+        data = {
+            "action": actions_per_episode,
+            "image_0": images_per_episode,
+            "state": states_per_episode,
+            "keypoints": keypoints_per_episode,
+        }
+        print(f"Saving episode {previous_episode} with {len(data['action'])} frames")
+        data=filter_episode(data)
+        save_name = f"{experiment_name}_{previous_episode}.npz"
+        os.makedirs(os.path.join(dataset_root, previous_episode), exist_ok=True)
+        np.savez_compressed(
+            os.path.join(dataset_root, previous_episode, save_name),
+            action=data["action"],
+            image_0=data["image_0"],
+            state=data["state"],
+            keypoints=data["keypoints"],
+        )
         actions_per_episode = []
         keypoints_per_episode = []
         images_per_episode = []
         states_per_episode = []
+        env.reset()
 
     sam2_pcd = sam2_pcd[0] # squeeze
     chamfer_distances = []
@@ -119,12 +141,8 @@ for idx, (
             keypoints2d[:, 0].max() > depth_map.shape[1]
             or keypoints2d[:, 1].max() > depth_map.shape[0]
         ):
-            print(
-                f"Keypoints out of bounds for frame {color_path}, hand {i} skipping..."
-            )
             invalid_keypoint = True
             continue
-
         depth_keypoints_map = depth_map
         depth_keypoints_map[keypoints2d[:, 1], keypoints2d[:, 0]] = depth_map[
             keypoints2d[:, 1], keypoints2d[:, 0]
@@ -134,13 +152,15 @@ for idx, (
         colors = np.zeros((len(keypoints2d), 3))
         for j, (x, y) in enumerate(keypoints2d):
             z = depth_map[y, x]
-            if j in [4, 8]:
+            if j in {4, 8}:
                 if z <= 250 or z >= 5000:
                     invalid_keypoint = True
             else:
                 colors[j] = [1, 1, 1]
             points[j] = [x, y, z]
-
+        if invalid_keypoint:
+            continue
+        invalid_keypoint = False
         points[:, 0] = (points[:, 0] - cx) * points[:, 2] / fx / 1000.0
         points[:, 1] = (points[:, 1] - cy) * points[:, 2] / fy / 1000.0
         points[:, 2] = points[:, 2] / 1000.0
@@ -160,25 +180,18 @@ for idx, (
         action = calculate_action(points,extrinsic)
         target_actions_per_frame.append(action)
 
-    if invalid_keypoint:
+    if len(chamfer_distances) == 0:
+        previous_episode = episode
         continue
 
     min_chamfer_distance = min(chamfer_distances)
     min_chamfer_index = chamfer_distances.index(min_chamfer_distance)
+
     action = target_actions_per_frame[min_chamfer_index]
-    actions_per_episode.append(action)
-
-
     pcd = pcds_per_frame[min_chamfer_index]
-    keypoints = np.asarray(pcd.points)
-    keypoints_per_episode.append(keypoints)
 
-    joint_state = env.get_wrapper_attr("robot").get_joint_position()
-    position_state = env.get_wrapper_attr("robot").get_cartesian_position().xyzrpy()
-    gripper_state = obs['gripper']
-    state = np.concatenate((joint_state.flatten(), position_state.flatten(), np.array([gripper_state]).flatten()))
-    sim_image=obs["frames"]["orbbec"]["rgb"]
-    overlayed_image = overlay_image(inpainted,sim_image,(inpainted.shape[1], inpainted.shape[0]))
+    keypoints = np.asarray(pcd.points)
+
     act = {
         "xyzrpy": [
             action[0],
@@ -190,25 +203,20 @@ for idx, (
         ],
         "gripper": action[6],
     }
+    obs, _, _, _, _ = env.step(act)
+    if not env.get_wrapper_attr("robot").get_state().ik_success:
+        previous_episode = episode
+        continue
+    joint_state = env.get_wrapper_attr("robot").get_joint_position()
+    position_state = env.get_wrapper_attr("robot").get_cartesian_position().xyzrpy()
+    gripper_state = obs['gripper']
+    state = np.concatenate((joint_state.flatten(), position_state.flatten(), np.array([gripper_state]).flatten()))
+    sim_image=obs["frames"]["orbbec"]["rgb"]
+    overlayed_image = overlay_image(inpainted,sim_image,(inpainted.shape[1], inpainted.shape[0]))
     states_per_episode.append(state)
     images_per_episode.append(overlayed_image)
-    cv2.imshow("Overlayed Image", overlayed_image)
-    cv2.waitKey(1)
-
-    obs, _, _, _, _ = env.step(act)
-
-
-    experiment_name = "handover_collection_1" #TODO: include in config
-    save_name = f"{experiment_name}_{episode}.npz"
-    os.makedirs(os.path.join(dataset_root, episode), exist_ok=True)
-    np.savez_compressed(
-        os.path.join(dataset_root, episode, save_name),
-        action=actions_per_episode,
-        image_0=images_per_episode,
-        state=states_per_episode,
-        keypoints=keypoints_per_episode,
-    )
-
+    actions_per_episode.append(action)
+    keypoints_per_episode.append(keypoints)
     previous_episode = episode
 
 print("Batch processing complete.")
