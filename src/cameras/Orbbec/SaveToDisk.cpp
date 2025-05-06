@@ -96,7 +96,8 @@ void saveRawData(std::shared_ptr<ob::Frame> frame, int episode, int count) {
   // Construct the filename using the string stream
   std::string count_str = count_pad.str();
   std::string fileName = "RawDepth_" + std::to_string(frame->timeStamp()) +
-                         "ms_e" + episode_str + "_" +
+                        //  "ms_e" + episode_str + "_" +
+                         "ms_" +
                           count_str +
                           ".raw";
   std::ofstream outFile(fileName, std::ios::binary);
@@ -155,8 +156,9 @@ void saveColor(std::shared_ptr<ob::ColorFrame> colorFrame, int episode, int coun
   std::vector<int> compression_params = {cv::IMWRITE_PNG_COMPRESSION, 0};
   std::string colorName = "Color_" + std::to_string(colorFrame->width()) + "x" +
                           std::to_string(colorFrame->height()) + "_" +
-                          std::to_string(colorFrame->timeStamp()) + "ms_e" +
-                          episode_str + "_" +
+                          // std::to_string(colorFrame->timeStamp()) + "ms_e" +
+                          std::to_string(colorFrame->timeStamp()) + "ms_" +
+                          // episode_str + "_" +
                           count_str +
                            ".png";
   // Save the color image

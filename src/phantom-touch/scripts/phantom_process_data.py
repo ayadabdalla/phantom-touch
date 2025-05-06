@@ -10,9 +10,9 @@ from utils.phantomutils import calculate_action, filter_episode, overlay_image
 from omegaconf import OmegaConf
 import os
 from utils.rgb_utils import load_rgb_images
-
 from rcsss.envs.base import ControlMode
 from rcsss.envs.factories import fr3_sim_env
+import logging
 from rcsss.envs.utils import (
     default_fr3_sim_gripper_cfg,
     default_fr3_sim_robot_cfg,
@@ -21,20 +21,24 @@ from rcsss.envs.utils import (
 
 # load config
 parent_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-config = OmegaConf.load(f"{parent_directory}/conf/3d_projection.yaml")
-dataset_root = config.dataset_directory
+config = OmegaConf.load(f"{parent_directory}/conf/phantom.yaml")
+dataset_root = config.dataset_output_directory
 recordings_root = config.recordings_directory
 vitpose_root = config.vitpose_output_directory
 sam2hand_root = config.sam2hand_directory
 inpainting_root = config.inpainting_directory
-experiment_name = "handover_collection_temp" #TODO: include in config
+experiment_name = config.experiment_name
+
+# Configure logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 # === Load Data ===
 # Load color images and their paths
 numpy_color, color_paths = load_rgb_images(
     recordings_root, prefix="Color_", return_path=True
 )
-
 inpainted_images = load_rgb_images(inpainting_root, prefix="Color_", return_path=False)
 numpy_depth = load_raw_depth_images(
     recordings_root, shape=[numpy_color.shape[1], numpy_color.shape[2]]
@@ -44,7 +48,9 @@ vitpose_keypoints2d, vitpose_keypoints2d_paths = load_keypoints_grouped_by_frame
 )
 sam2_pcds, sam2_pcd_paths = load_pcds(sam2hand_root, prefix="Color_", return_path=True)
 
-extrinsic = np.load("/home/epon04yc/phantom-touch/src/phantom-touch/data/robotbase_camera_transform_orbbec_fr4.npy")
+extrinsic = np.load(
+    "/home/epon04yc/phantom-touch/src/phantom-touch/data/robotbase_camera_transform_orbbec_fr4.npy"
+)
 assert (
     numpy_depth.shape[0] == numpy_color.shape[0]
 ), "Number of frames in masks and color images do not match"
@@ -52,19 +58,14 @@ assert numpy_depth.shape[0] == len(
     vitpose_keypoints2d
 ), "Number of keypoints files and depth images do not match"
 
-print(
+
+logger.info(
     f"Loaded {numpy_depth.shape} frames of depth images, \
-    /  {numpy_color.shape} frames of color images, and \
-    {len(vitpose_keypoints2d)} files of keypoints and \
-    {len(sam2_pcds)} of sam segmented pcds and \
-    {inpainted_images.shape} of inpainted images"
+    {numpy_color.shape} frames of color images, \
+    {len(vitpose_keypoints2d)} files of keypoints, \
+    {len(sam2_pcds)} sam segmented pcds, and \
+    {inpainted_images.shape} inpainted images"
 )
-# print(
-#     f"Loaded {numpy_depth.shape} frames of depth images, \
-#     /  {numpy_color.shape} frames of color images, and \
-#     {len(vitpose_keypoints2d)} files of keypoints and \
-#     {len(sam2_pcds)} of sam segmented pcds and "
-# )
 
 # === Process Data ===
 # Initialize lists to store data for each episode
@@ -123,7 +124,7 @@ for idx, (
             "inpainted": inpainted_images_per_episode,
         }
         print(f"Saving episode {previous_episode} with {len(data['action'])} frames")
-        data=filter_episode(data)
+        data = filter_episode(data)
         save_name = f"{experiment_name}_{previous_episode}.npz"
         os.makedirs(os.path.join(dataset_root, previous_episode), exist_ok=True)
         np.savez_compressed(
@@ -132,7 +133,7 @@ for idx, (
             image_0=data["image_0"],
             state=data["state"],
             keypoints=data["keypoints"],
-            inpainted=data["inpainted"]
+            inpainted=data["inpainted"],
         )
         actions_per_episode = []
         keypoints_per_episode = []
@@ -141,11 +142,13 @@ for idx, (
         inpainted_images_per_episode = []
         env.reset()
 
-    sam2_pcd = sam2_pcd[0] # squeeze
+    sam2_pcd = sam2_pcd[0]  # squeeze
     chamfer_distances = []
     target_actions_per_frame = []
     pcds_per_frame = []
-    invalid_keypoint = False # ignore frames with one or more hands with bad depth values
+    invalid_keypoint = (
+        False  # ignore frames with one or more hands with bad depth values
+    )
     for i, keypoints2d in enumerate(keypoints_per_frame):
         keypoints2d = keypoints2d[:, :2].astype(int)
         if (
@@ -188,7 +191,7 @@ for idx, (
         chamfer_distance = np.mean(chamfer_distance)
         chamfer_distances.append(chamfer_distance)
 
-        action = calculate_action(points,extrinsic)
+        action = calculate_action(points, extrinsic)
         target_actions_per_frame.append(action)
 
     if len(chamfer_distances) == 0:
@@ -220,11 +223,19 @@ for idx, (
         continue
     joint_state = env.get_wrapper_attr("robot").get_joint_position()
     position_state = env.get_wrapper_attr("robot").get_cartesian_position().xyzrpy()
-    gripper_state = obs['gripper']
-    state = np.concatenate((joint_state.flatten(), position_state.flatten(), np.array([gripper_state]).flatten()))
-    sim_image=obs["frames"]["orbbec"]["rgb"]
+    gripper_state = obs["gripper"]
+    state = np.concatenate(
+        (
+            joint_state.flatten(),
+            position_state.flatten(),
+            np.array([gripper_state]).flatten(),
+        )
+    )
+    sim_image = obs["frames"]["orbbec"]["rgb"]
     # show inpainted image
-    overlayed_image = overlay_image(inpainted,sim_image,(inpainted.shape[1], inpainted.shape[0]))
+    overlayed_image = overlay_image(
+        inpainted, sim_image, (inpainted.shape[1], inpainted.shape[0])
+    )
     states_per_episode.append(state)
     images_per_episode.append(overlayed_image)
     actions_per_episode.append(action)

@@ -2,7 +2,7 @@ metadata:
   repo_dir: ${phantom-touch:}
   data_dir: /mnt/dataset_drive/ayad/phantom-touch
   model_dir: /mnt/dataset_drive/ayad/phantom-touch
-  experiment_name: handover_collection_temp # Name of the experiment
+  experiment_name: handover_collection_0 # Name of the experiment
   # experiment_specifics: white_nonreflective_cloth_light_on_ambient_light
 sam2sieve:
   # images_path : ${metadata.data_dir}/data/recordings/${metadata.experiment_name}/${metadata.experiment_specifics}/png_output/
