@@ -27,7 +27,7 @@ recordings_root = config.recordings_directory
 vitpose_root = config.vitpose_output_directory
 sam2hand_root = config.sam2hand_directory
 inpainting_root = config.inpainting_directory
-experiment_name = "handover_collection_1" #TODO: include in config
+experiment_name = "handover_collection_temp" #TODO: include in config
 
 # === Load Data ===
 # Load color images and their paths
@@ -59,6 +59,12 @@ print(
     {len(sam2_pcds)} of sam segmented pcds and \
     {inpainted_images.shape} of inpainted images"
 )
+# print(
+#     f"Loaded {numpy_depth.shape} frames of depth images, \
+#     /  {numpy_color.shape} frames of color images, and \
+#     {len(vitpose_keypoints2d)} files of keypoints and \
+#     {len(sam2_pcds)} of sam segmented pcds and "
+# )
 
 # === Process Data ===
 # Initialize lists to store data for each episode
@@ -66,6 +72,7 @@ keypoints_per_episode = []
 actions_per_episode = []
 images_per_episode = []
 states_per_episode = []
+inpainted_images_per_episode = []
 previous_episode = os.path.basename(os.path.dirname(color_paths[0]))
 
 env = fr3_sim_env(
@@ -104,6 +111,7 @@ for idx, (
     if episode != previous_episode or idx == numpy_depth.shape[0] - 1:
         # discard the last image
         images_per_episode = images_per_episode[:-1]
+        inpainted_images_per_episode = inpainted_images_per_episode[:-1]
         keypoints_per_episode = keypoints_per_episode[:-1]
         states_per_episode = states_per_episode[:-1]
         actions_per_episode = actions_per_episode[1:]
@@ -112,6 +120,7 @@ for idx, (
             "image_0": images_per_episode,
             "state": states_per_episode,
             "keypoints": keypoints_per_episode,
+            "inpainted": inpainted_images_per_episode,
         }
         print(f"Saving episode {previous_episode} with {len(data['action'])} frames")
         data=filter_episode(data)
@@ -123,11 +132,13 @@ for idx, (
             image_0=data["image_0"],
             state=data["state"],
             keypoints=data["keypoints"],
+            inpainted=data["inpainted"]
         )
         actions_per_episode = []
         keypoints_per_episode = []
         images_per_episode = []
         states_per_episode = []
+        inpainted_images_per_episode = []
         env.reset()
 
     sam2_pcd = sam2_pcd[0] # squeeze
@@ -138,8 +149,8 @@ for idx, (
     for i, keypoints2d in enumerate(keypoints_per_frame):
         keypoints2d = keypoints2d[:, :2].astype(int)
         if (
-            keypoints2d[:, 0].max() > depth_map.shape[1]
-            or keypoints2d[:, 1].max() > depth_map.shape[0]
+            keypoints2d[:, 0].max() >= depth_map.shape[1]
+            or keypoints2d[:, 1].max() >= depth_map.shape[0]
         ):
             invalid_keypoint = True
             continue
@@ -212,11 +223,13 @@ for idx, (
     gripper_state = obs['gripper']
     state = np.concatenate((joint_state.flatten(), position_state.flatten(), np.array([gripper_state]).flatten()))
     sim_image=obs["frames"]["orbbec"]["rgb"]
+    # show inpainted image
     overlayed_image = overlay_image(inpainted,sim_image,(inpainted.shape[1], inpainted.shape[0]))
     states_per_episode.append(state)
     images_per_episode.append(overlayed_image)
     actions_per_episode.append(action)
     keypoints_per_episode.append(keypoints)
+    inpainted_images_per_episode.append(inpainted)
     previous_episode = episode
 
 print("Batch processing complete.")

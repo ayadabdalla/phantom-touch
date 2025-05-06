@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from scipy.spatial.transform import Rotation as R
 
-from utils.phantomutils import filter_trajectories, normal_principal_to_rotation_matrix
+from utils.phantomutils import normal_principal_to_rotation_matrix
 
 
 logger = logging.getLogger(__name__)
@@ -21,6 +21,44 @@ from rcsss.envs.utils import (
     default_mujoco_cameraset_cfg,
 )
 
+from scipy.spatial.transform import Rotation as R
+
+
+def smooth_quaternions(quaternions, window_size=5):
+    pad = window_size // 2
+    padded = np.pad(quaternions, ((pad, pad), (0, 0)), mode="edge")
+    smoothed = np.zeros_like(quaternions)
+
+    for i in range(len(quaternions)):
+        window = padded[i:i+window_size]
+
+        # Ensure continuity: flip quaternions to the same hemisphere
+        for j in range(1, window.shape[0]):
+            if np.dot(window[j], window[j - 1]) < 0:
+                window[j] = -window[j]
+
+        avg = np.mean(window, axis=0)
+        avg /= np.linalg.norm(avg)
+        smoothed[i] = avg
+
+    return smoothed
+
+
+
+def moving_average(data, window_size=5):
+    pad_width = window_size // 2
+    if data.ndim == 1:
+        padded = np.pad(data, (pad_width,), mode="edge")
+        kernel = np.ones(window_size) / window_size
+        return np.convolve(padded, kernel, mode="valid")
+    else:
+        padded = np.pad(data, ((pad_width, pad_width), (0, 0)), mode="edge")
+        kernel = np.ones(window_size) / window_size
+        return np.array([
+            np.convolve(padded[:, i], kernel, mode="valid")
+            for i in range(data.shape[1])
+        ]).T
+
 def main():
 
     resource_manger = DummyResourceManager()
@@ -35,115 +73,103 @@ def main():
             camera_set_cfg=default_mujoco_cameraset_cfg(),
         )
         # env.get_wrapper_attr("sim").open_gui()
-        obs,_=env.reset()
+        obs, _ = env.reset()
         # print(env.unwrapped.robot.get_cartesian_position())
 
-        trajectories = [
-            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/trajectories/e0/hand_keypoints_e0_right.npz",
-        ] 
-        # filter trajectories
-        positions, rotations, thumbs,indeces,grips = filter_trajectories(trajectories)
-        extrinsics = np.load("/home/epon04yc/phantom-touch/src/phantom-touch/data/robotbase_camera_transform_orbbec_fr4.npy")
-        # load the rgb image from the directory
-        directory = f"/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/inpainting_output/episodes/e0"
-        # get the files in the directory
-        files = os.listdir(directory)
-        # get only the files that end with .png
-        files = [f for f in files if f.endswith(".png")]
-        # sort the files
-        files.sort()
-        # delete the indeces from the files
-        data = np.load(trajectories[0])
-        valid_indices = data["valid_frames"]
-        print("valid indices", len(valid_indices))
+        episodes = [
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e0/handover_collection_temp_e0.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e1/handover_collection_temp_e1.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e2/handover_collection_temp_e2.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e3/handover_collection_temp_e3.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e4/handover_collection_temp_e4.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e5/handover_collection_temp_e5.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e6/handover_collection_temp_e6.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e7/handover_collection_temp_e7.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e8/handover_collection_temp_e8.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e9/handover_collection_temp_e9.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e10/handover_collection_temp_e10.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e11/handover_collection_temp_e11.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e12/handover_collection_temp_e12.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e13/handover_collection_temp_e13.npz",
+            "/mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset/e14/handover_collection_temp_e14.npz",
+        ]
+        extrinsics = np.load(
+            "/home/epon04yc/phantom-touch/src/phantom-touch/data/robotbase_camera_transform_orbbec_fr4.npy"
+        )
 
-        # if valid index string exists in file name then keep it
-        files = [f for f in files if any(str(i) in f for i in valid_indices)]
-    
-        # files = [files[i] for i in range(len(files)) if i in valid_indices]
-        files = [files[i] for i in range(len(files)) if i not in indeces]
-        # convert positions to robot base frame
-        print(len(positions[0]), "positions")
-        print(len(files), "images")
-        positions = positions[0]
-        rotations = rotations[0]
-        thumbs = thumbs[0]
-        grips = grips[0]
+        for episode in episodes:
+            data = np.load(episode)
 
-        positions = np.concatenate([positions, np.ones((positions.shape[0], 1))], axis=1)
-        positions = np.dot(extrinsics, positions.T).T
+            # positions = data["action"][:, :3]
+            # rotations = data["action"][:, 3:6]
+            # grips = data["action"][:, 6]
+            print(data.keys())
+            inpainted_images = data["inpainted"]
+            positions = moving_average(data["action"][:, :3], window_size=5)
+            # rotations = smooth_euler_rotations(data["action"][:, 3:6], window_size=5)
+            rotations = R.from_quat(smooth_quaternions(
+        R.from_euler('xyz', data["action"][:, 3:6]).as_quat(), window_size=5)
+    ).as_euler('xyz')
 
-        rotations = np.concatenate([rotations, np.zeros((rotations.shape[0], 1))], axis=1)
-        rotations = np.dot(extrinsics, rotations.T).T
-        rotations = rotations[:, :3]
-
-        thumbs = np.concatenate([thumbs, np.zeros((thumbs.shape[0], 1))], axis=1)
-        thumbs = np.dot(extrinsics, thumbs.T).T
-        thumbs = thumbs[:, :3]
-
-        rotation_matrices = []
-        for i in range(rotations.shape[0]):
-            normal = rotations[i]
-            thumb = thumbs[i]
-            rotation_matrix = normal_principal_to_rotation_matrix(normal, thumb)
-            rotation_matrices.append(rotation_matrix)
-
-        # rotation_matrix = np.array([
-        #     [-0.00617474, -0.999715, 0.023071],
-        #     [0.0317128, -0.0232556, -0.999226],
-        #     [0.999478, -0.00543832, 0.0318473]
-        # ])
-        # r = R.from_matrix(rotation_matrix)
-        # target_orn = r.as_quat(scalar_first=True)  # Convert rotation matrix to quaternion
-        # # put w first
-        # if target_orn[0] < 0:
-        #     target_orn = -target_orn
-        #     print("quaternion is negative")
-        # else:
-        #     print("quaternion is already positive")
+            grips = moving_average(data["action"][:, 6], window_size=5)
 
 
-        # act = {"tquart": [0.59,0.18,0.24, target_orn[0], target_orn[1], target_orn[2], target_orn[3]], "gripper": 1}
-        # # rollout trajectories
-        # # generate positions.shape[0] copies of the target orn
-        # obs,_,_,_,_= env.step(act)
+            print(positions.shape)
+            images = []
+            for i in range(positions.shape[0]):
+                act = {
+                    "xyzrpy": [
+                        positions[i, 0],
+                        positions[i, 1],
+                        positions[i, 2],
+                        rotations[i, 0],
+                        rotations[i, 1],
+                        rotations[i, 2],
+                    ],
+                    "gripper": grips[i],
+                }
+                obs, _, _, _, _ = env.step(act)
+                sim_image = obs["frames"]["orbbec"]["rgb"]
 
-        images = []
-        for i in range(positions.shape[0]):
-            # rotation_matrix to quaternion
-            r = R.from_matrix(rotation_matrices[i])
-            # target_orn = r.as_quat(scalar_first=False)  # Convert rotation matrix to quaternion
-            target_orn = r.as_euler('xyz', degrees=False)
-            # act = {"tquart": [positions[i, 0], positions[i, 1], positions[i, 2], target_orn[0], target_orn[1], target_orn[2], target_orn[3]], "gripper": grips[i]}
-            act = {"xyzrpy": [positions[i, 0], positions[i, 1], positions[i, 2], target_orn[0], target_orn[1], target_orn[2]], "gripper": grips[i]}
-            obs,_,_,_,_= env.step(act)
-            image = obs["frames"]["orbbec"]['rgb']
+                # load the image
+                color_image = inpainted_images[i]
+                # Normalize the color image and add an alpha channel
+                color_image_normalized = color_image.astype(np.float32) / 255.0
+                color_image_with_alpha = np.concatenate(
+                    [
+                        color_image_normalized,
+                        np.ones_like(color_image_normalized[:, :, :1]),
+                    ],
+                    axis=2,
+                )
 
-            # load the image
-            color_image = cv2.imread(os.path.join(directory, files[i]))
-            # Normalize the color image and add an alpha channel
-            color_image_normalized = color_image.astype(np.float32) / 255.0
-            color_image_with_alpha = np.concatenate([color_image_normalized, np.ones_like(color_image_normalized[:, :, :1])], axis=2)
+                # Normalize the Mujoco image
+                # # resize image to 240 * 432
+                sim_image = cv2.resize(sim_image, (432, 240))
+                mujoco_image_normalized = sim_image.astype(np.float32) / 255.0
 
-            # Normalize the Mujoco image
-            # # resize image to 240 * 432
-            image = cv2.resize(image, (432, 240))
-            mujoco_image_normalized = image.astype(np.float32) / 255.0
+                # Create alpha channel for Mujoco image - black pixels should be transparent
+                # Assuming black is [0, 0, 0] in RGB
+                mujoco_alpha = np.any(
+                    mujoco_image_normalized > 0, axis=2, keepdims=True
+                ).astype(np.float32)
+                mujoco_image_with_alpha = np.concatenate(
+                    [mujoco_image_normalized, mujoco_alpha], axis=2
+                )
 
-            # Create alpha channel for Mujoco image - black pixels should be transparent
-            # Assuming black is [0, 0, 0] in RGB
-            mujoco_alpha = np.any(mujoco_image_normalized > 0, axis=2, keepdims=True).astype(np.float32)
-            mujoco_image_with_alpha = np.concatenate([mujoco_image_normalized, mujoco_alpha], axis=2)
+                # Perform the overlay operation
+                overlayed_image = (
+                    color_image_with_alpha[:, :, :3]
+                    * (1 - mujoco_image_with_alpha[:, :, 3:])
+                    + mujoco_image_with_alpha[:, :, :3] * mujoco_image_with_alpha[:, :, 3:]
+                )
 
-            # Perform the overlay operation
-            overlayed_image = color_image_with_alpha[:, :, :3] * (1 - mujoco_image_with_alpha[:, :, 3:]) + \
-                            mujoco_image_with_alpha[:, :, :3] * mujoco_image_with_alpha[:, :, 3:]
+                # Convert back to 8-bit and BGR for display
+                overlayed_image = (overlayed_image * 255).astype(np.uint8)
+                images.append(overlayed_image)
+                cv2.imshow("Overlayed Image", overlayed_image)
+                cv2.waitKey(1)
 
-            # Convert back to 8-bit and BGR for display
-            overlayed_image = (overlayed_image * 255).astype(np.uint8)
-            images.append(overlayed_image)
-            cv2.imshow("Overlayed Image", overlayed_image)
-            cv2.waitKey(1)
 
 if __name__ == "__main__":
     main()

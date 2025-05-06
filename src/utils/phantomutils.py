@@ -3,81 +3,6 @@ import numpy as np
 from scipy import linalg
 from scipy.spatial.transform import Rotation as R
 
-
-def calculate_target_position_and_orientation(hand_keypoints):
-    """
-    Calculate the target position as the midpoint between the thumb tip and index finger tip,
-    and the target orientation by fitting a plane through the points of the thumb and index finger.
-
-    Parameters:
-    -----------
-    hand_keypoints : numpy.ndarray or list
-        Array or list of shape (21, 3) containing 3D coordinates of 21 hand keypoints.
-        Keypoints are organized in the following order:
-        0: Wrist
-        1-4: Thumb (from base to tip)
-        5-8: Index finger (from base to tip)
-        9-12: Middle finger (from base to tip)
-        13-16: Ring finger (from base to tip)
-        17-20: Pinky finger (from base to tip)
-
-    Returns:
-    --------
-    tuple: (target_position, normal_vector, plane_points, thumb_axis)
-        target_position: numpy.ndarray of shape (3,) - midpoint between the thumb tip and index finger tip.
-        normal_vector: numpy.ndarray of shape (3,) - unit normal vector of the fitted plane.
-        plane_points: numpy.ndarray of shape (8, 3) - points used for plane fitting (thumb and index finger points).
-        thumb_axis: numpy.ndarray of shape (3,) - unit vector representing the principal axis of the thumb.
-    """
-    # Validate input
-    if not isinstance(hand_keypoints, np.ndarray):
-        hand_keypoints = np.array(hand_keypoints)
-
-    if hand_keypoints.shape != (21, 3):
-        raise ValueError(
-            f"Expected hand keypoints of shape (21, 3), got {hand_keypoints.shape}"
-        )
-
-    # Extract index finger and thumb keypoints
-    index_finger = hand_keypoints[5:9]  # indices 5-8
-    thumb = hand_keypoints[1:5]  # indices 1-4
-
-    # 1. Calculate target position (pt) - midpoint between thumb tip and index tip
-    thumb_tip = thumb[3]  # The 4th point of thumb (index 4 in original array)
-    index_tip = index_finger[
-        3
-    ]  # The 4th point of index finger (index 8 in original array)
-    target_position = (thumb_tip + index_tip) / 2
-
-    # 2. Calculate target orientation by fitting a plane through thumb and index finger points
-    # Combine all points from thumb and index finger
-    plane_points = np.vstack((thumb, index_finger))
-
-    # Fit a plane to the points using Singular Value Decomposition (SVD)
-    centroid = np.mean(plane_points, axis=0)
-    _, _, vh = np.linalg.svd(plane_points - centroid)
-        # Center the points
-    centered_points = plane_points - centroid
-
-    # Singular Value Decomposition
-    u, s, vh = linalg.svd(centered_points)
-
-    # The normal vector to the plane is the last singular vector
-    normal_vector = vh[2, :]
-
-    # Normalize the vector to unit length
-    normal_vector = normal_vector / np.linalg.norm(normal_vector)
-
-    # ensure the normal vector points in the negative z direction
-    if normal_vector[2] > 0:
-        normal_vector = -normal_vector
-    # the principal axis is the thumb, fit a line through the first 4 points using pca
-    thumb_axis = thumb[3] - thumb[0]
-    thumb_axis = thumb_axis / np.linalg.norm(thumb_axis)
-
-    return target_position, normal_vector, plane_points, thumb_axis
-
-
 def calculate_action(hand_keypoints,extrinsics):
     if not isinstance(hand_keypoints, np.ndarray):
         hand_keypoints = np.array(hand_keypoints)
@@ -187,53 +112,13 @@ def overlay_image(color_image, mujoco_image, size=(432, 240)):
     overlayed_image = (overlayed_image * 255).astype(np.uint8)
     return overlayed_image
 
-def filter_trajectories(trajectories):
-    # do exponential average on only the z axis
-    filtered_positions = []
-    filtered_normals = []
-    filtered_thumbs = []
-    filtered_grips = []
-    for trajectory in trajectories:
-        data = np.load(trajectory)
-        positions = data["positions"]
-        normals = data["normals"]
-        thumbs = data["thumb_vectors"]
-        keypoints = data["keypoints"]
-        grips = np.linalg.norm(positions - keypoints[:, 8, :3], axis=1)
-        # normalize the grips
-        grips = grips / np.max(grips)
-        filtered_z = np.zeros_like(positions[:, 2])
-        # expect the next 2 steps and compare to the actual and if it's too far ignore it
-        indeces = []
-        for i in range(0, len(positions) - 2):
-            filtered_z[i] = 0.8 * positions[i + 2, 2] + 0.2 * positions[i + 1, 2]
-            # Check if the current z is too far from the expected z
-            if abs(positions[i, 2] - filtered_z[i]) > 0.1:
-                # store index of the filtered z
-                indeces.append(i)
-        positions = np.delete(positions, indeces, axis=0)
-        normals = np.delete(normals, indeces, axis=0)
-        thumbs = np.delete(thumbs, indeces, axis=0)
-        grips = np.delete(grips, indeces, axis=0)
-        print(f"Filtered out: {len(indeces)}")
-        filtered_positions.append(positions)
-        filtered_thumbs.append(thumbs)
-        filtered_normals.append(normals)
-        filtered_grips.append(grips)
-    return (
-        filtered_positions,
-        filtered_normals,
-        filtered_thumbs,
-        indeces,
-        filtered_grips,
-    )
-
 def filter_episode(npz_file):
     # do exponential average on only the z axis
     action=np.array(npz_file["action"]).reshape(-1, 7)
     image_0 = np.array(npz_file["image_0"]).reshape(-1, 240, 432, 3)
     state = np.array(npz_file["state"]).reshape(-1, 14)
     keypoints = np.array(npz_file["keypoints"]).reshape(-1, 21, 3)
+    inpainted = np.array(npz_file["inpainted"]).reshape(-1, 240, 432, 3)
     filtered_xyz = np.zeros_like(action[:, :3])
     filtered_euler = np.zeros_like(action[:, 3:6])
     indeces = set()
@@ -259,12 +144,15 @@ def filter_episode(npz_file):
     image_0 = np.delete(image_0, indeces, axis=0)
     state = np.delete(state, indeces, axis=0)
     keypoints = np.delete(keypoints, indeces, axis=0)
+    inpainted = np.delete(inpainted, indeces, axis=0)
+
     print(f"Filtered out: {len(indeces)}")
     data ={
         "action": action,
         "image_0": image_0,
         "state": state,
         "keypoints": keypoints,
+        "inpainted": inpainted
     }
     return (
         data
@@ -295,3 +183,39 @@ def normal_principal_to_rotation_matrix(normal, principal=None, eps=1e-6):
     # Construct the rotation matrix
     rot = np.vstack((basis_one, basis_two, basis_three)).T
     return rot
+
+
+def smooth_quaternions(quaternions, window_size=5):
+    pad = window_size // 2
+    padded = np.pad(quaternions, ((pad, pad), (0, 0)), mode="edge")
+    smoothed = np.zeros_like(quaternions)
+
+    for i in range(len(quaternions)):
+        window = padded[i:i+window_size]
+
+        # Ensure continuity: flip quaternions to the same hemisphere
+        for j in range(1, window.shape[0]):
+            if np.dot(window[j], window[j - 1]) < 0:
+                window[j] = -window[j]
+
+        avg = np.mean(window, axis=0)
+        avg /= np.linalg.norm(avg)
+        smoothed[i] = avg
+
+    return smoothed
+
+
+
+def moving_average(data, window_size=5):
+    pad_width = window_size // 2
+    if data.ndim == 1:
+        padded = np.pad(data, (pad_width,), mode="edge")
+        kernel = np.ones(window_size) / window_size
+        return np.convolve(padded, kernel, mode="valid")
+    else:
+        padded = np.pad(data, ((pad_width, pad_width), (0, 0)), mode="edge")
+        kernel = np.ones(window_size) / window_size
+        return np.array([
+            np.convolve(padded[:, i], kernel, mode="valid")
+            for i in range(data.shape[1])
+        ]).T

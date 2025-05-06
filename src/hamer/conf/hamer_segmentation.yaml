@@ -1,4 +1,4 @@
-experiment_name: grasping_collection_1 # Name of the experiment
+experiment_name: handover_collection_temp # Name of the experiment
 checkpoint: /home/epon04yc/phantom-touch/src/hamer/_DATA/hamer_ckpts/checkpoints/hamer.ckpt # Path to pretrained model checkpoint
 img_folder: /mnt/dataset_drive/ayad/phantom-touch/data/recordings/${experiment_name}/episodes # Folder with input images
 hamer_out_folder: /mnt/dataset_drive/ayad/phantom-touch/data/output/${experiment_name}/hamer_output # Output folder to save rendered results
