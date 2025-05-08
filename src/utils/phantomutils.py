@@ -219,3 +219,41 @@ def moving_average(data, window_size=5):
             np.convolve(padded[:, i], kernel, mode="valid")
             for i in range(data.shape[1])
         ]).T
+
+
+def invert_keypoints(vitpose_keypoints2d, config):
+    inverted_keypoints = []
+
+    for keypoints in vitpose_keypoints2d:
+        # Get cropping and resizing info
+        x_crop, y_crop, w_crop, h_crop, w_resize, h_resize = get_crop_and_resize_params(config)
+
+        # Extract x', y'
+        xy_prime = keypoints[..., :2]  # shape (n_i, 21, 2)
+
+        # Inverse resize
+        xy_c = xy_prime.copy()
+        xy_c[..., 0] = (xy_prime[..., 0] / w_resize) * w_crop  # x_c
+        xy_c[..., 1] = (xy_prime[..., 1] / h_resize) * h_crop  # y_c
+
+        # Inverse crop
+        xy_orig = xy_c.copy()
+        xy_orig[..., 0] += x_crop
+        xy_orig[..., 1] += y_crop
+
+        # Recombine with score
+        scores = keypoints[..., 2:]  # shape (n_i, 21, 1)
+        keypoints_orig = np.concatenate([xy_orig, scores], axis=-1)  # (n_i, 21, 3)
+
+        inverted_keypoints.append(keypoints_orig)
+
+    return inverted_keypoints
+
+def get_crop_and_resize_params(config):
+    x1_crop, y1_crop, x2_crop, y2_crop = config.crop.x1, config.crop.y1, config.crop.x2, config.crop.y2
+    w_resize, h_resize = config.resolution.width, config.resolution.height
+    x_crop = x1_crop
+    y_crop = y1_crop
+    w_crop = x2_crop - x1_crop
+    h_crop = y2_crop - y1_crop
+    return x_crop, y_crop, w_crop, h_crop, w_resize, h_resize

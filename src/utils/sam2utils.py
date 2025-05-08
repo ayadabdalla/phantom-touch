@@ -20,6 +20,7 @@ def sievesamzip_to_mp4_video(sam_out, output_path=None):
         images = sorted(images, key=lambda x: int(x.split("_")[1]))
 
         first_frame = cv2.imread(os.path.join(temp_dir, images[0]))
+        first_frame = first_frame[280:840, 0:960]
         height, width, layers = first_frame.shape
         frame_size = (width, height)
 
@@ -32,6 +33,7 @@ def sievesamzip_to_mp4_video(sam_out, output_path=None):
         for image in images:
             img_path = os.path.join(temp_dir, image)
             frame = cv2.imread(img_path)
+            frame = frame[280:840, 0:960]
             out.write(frame)
     out.release()
 
@@ -48,6 +50,7 @@ def sievesamzip_to_numpy(sam_out):
             mask = cv2.imread(os.path.join(temp_dir, image), cv2.IMREAD_ANYDEPTH)
             original_masks.append(mask)
     original_masks = np.array(original_masks)
+    print(original_masks.shape)
     return original_masks
 
 

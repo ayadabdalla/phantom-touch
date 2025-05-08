@@ -7,7 +7,7 @@ metadata:
 sam2sieve:
   # images_path : ${metadata.data_dir}/data/recordings/${metadata.experiment_name}/${metadata.experiment_specifics}/png_output/
   images_path : ${metadata.data_dir}/data/recordings/${metadata.experiment_name}/episodes
-  text_prompt : human
+  text_prompt : human on the left side of the image
   # output_dir : ${metadata.data_dir}/data/output/${metadata.experiment_name}/${metadata.experiment_specifics}/sam2-sieve_output
   output_dir : ${metadata.data_dir}/data/output/${metadata.experiment_name}/sam2-sieve_output
 sam2videoPredictor:
