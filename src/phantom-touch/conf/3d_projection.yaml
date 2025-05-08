@@ -3,10 +3,10 @@ crop:
   y: 0
 shape: [1080, 1920]
 
-trajectory_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/trajectories
-recordings_directory: /mnt/dataset_drive/ayad/phantom-touch/data/recordings/handover_collection_1/episodes
-sam2hand_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/sam2hand_output/episodes
-hamer_output_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/hamer_output/episodes
-vitpose_output_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/vitpose_output/episodes
-dataset_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/dataset
-inpainting_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_1/inpainting_output/episodes
+trajectory_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_0/trajectories
+recordings_directory: /mnt/dataset_drive/ayad/phantom-touch/data/recordings/handover_collection_0/episodes
+sam2hand_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_0/sam2hand_output/episodes
+hamer_output_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_0/hamer_output/episodes
+vitpose_output_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_0/vitpose_output/episodes
+dataset_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_0/dataset
+inpainting_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/handover_collection_0/inpainting_output/episodes

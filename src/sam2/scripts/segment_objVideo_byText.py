@@ -116,7 +116,6 @@ for episode in episodes:
                     frame_names.append(os.path.join(root, file))
     frame_names.sort(key=lambda p: os.path.splitext(p)[0])
     for i in range(mask_frames.shape[0]):
-        frame_name = os.path.join(output_path, f"{frame_names[i]}")
         # check for the word recordings in the filename and replace it with the word output
         frame_name = frame_name.replace("recordings", "output")
         frame_name = frame_name.replace("Color_", "Mask_")

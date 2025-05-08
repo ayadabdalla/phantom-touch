@@ -1,6 +1,15 @@
 experiment_name: handover_collection_0
 recordings_directory: /mnt/dataset_drive/ayad/phantom-touch/data/recordings/${experiment_name}/episodes
 sam2hand_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/${experiment_name}/sam2hand_output/episodes
-vitpose__directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/${experiment_name}/vitpose_output/episodes
+vitpose_output_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/${experiment_name}/vitpose_output/episodes
 inpainting_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/${experiment_name}/inpainting_output/episodes
 dataset_output_directory: /mnt/dataset_drive/ayad/phantom-touch/data/output/${experiment_name}/dataset
+
+crop:
+  x1: 400
+  y1: 280 
+  x2: 1200 
+  y2: 840
+resolution:
+  width: 432
+  height: 240
