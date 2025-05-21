@@ -121,7 +121,14 @@ for ep in range(0,112):
     ):
         episode = os.path.basename(os.path.dirname(color_path))
         frame_index = os.path.splitext(color_path)[0].split("_")[-1]
-        if idx == numpy_depth.shape[0] - 1:
+        # get the minimum shape of the all the data iterated on
+        last_index = min(
+            numpy_depth.shape[0],
+            numpy_color.shape[0],
+            len(vitpose_keypoints2d),
+            len(sam2_pcds),
+        )
+        if idx == last_index - 1:
             # discard the last image
             images_per_episode = images_per_episode[:-1]
             inpainted_images_per_episode = inpainted_images_per_episode[:-1]

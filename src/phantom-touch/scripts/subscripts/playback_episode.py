@@ -18,8 +18,9 @@ for episode in episodes:
     if len(data["image_0"]) < 10:
         print(f"Episode {episode} has less than 10 frames")
         i+=1
+# print(i)
+    # replay the episode from image_0
+    for image in data["image_0"]:
+        cv2.imshow("image", image)
+        cv2.waitKey(1)
 print(i)
-    # # replay the episode from image_0
-    # for image in data["image_0"]:
-    #     cv2.imshow("image", image)
-    #     cv2.waitKey(1)
