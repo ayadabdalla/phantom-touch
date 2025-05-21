@@ -204,7 +204,8 @@ for ep in range(0,112):
 
         if len(chamfer_distances) == 0:
             continue
-
+        elif min(chamfer_distances) > 0.005:
+            continue
         min_chamfer_distance = min(chamfer_distances)
         min_chamfer_index = chamfer_distances.index(min_chamfer_distance)
 

@@ -137,7 +137,7 @@ def filter_episode(npz_file):
         angle_diffs = np.abs(np.arctan2(np.sin(action[i, 3:6] - filtered_euler[i]),
                                         np.cos(action[i, 3:6] - filtered_euler[i])))
 
-        if np.any(pos_diffs > 0.1) or np.any(angle_diffs > 0.5):
+        if np.any(pos_diffs > 0.2) or np.any(angle_diffs > 1):
             indeces.add(i)
     indeces = sorted(indeces)
     action = np.delete(action, indeces, axis=0)
