@@ -12,6 +12,7 @@ assets/*
 data
 _DATA
 *.npz
+*.pth
 
 # virtual env
 .phantom-touch
