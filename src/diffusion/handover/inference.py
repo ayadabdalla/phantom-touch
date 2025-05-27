@@ -9,6 +9,29 @@ from PIL import Image as PILImage
 from typing import List, Tuple, Dict, Optional
 import pdb
 
+import cv2
+from pyorbbecsdk import Config
+from pyorbbecsdk import OBError
+from pyorbbecsdk import OBSensorType, OBFormat
+from pyorbbecsdk import Pipeline, FrameSet
+from pyorbbecsdk import VideoStreamProfile
+
+
+def get_image_from_stream(pipeline):
+    frames: FrameSet = pipeline.wait_for_frames(100)
+    if frames is None:
+        return None
+    color_frame = frames.get_color_frame()
+    if color_frame is None:
+        return None
+    color_image = color_frame.get_data()
+    import pdb
+    pdb.set_trace()
+    color_image = color_image.reshape((1080, 1920, 3))
+    color_image = cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR)
+    return color_image
+
+
 def infer_action(model, noise_scheduler, nimage, nstates, config, data_stats):
     device = 'cuda:0'
     with torch.no_grad():
@@ -67,6 +90,26 @@ def run_inference():
     
     device = 'cuda:0'
 
+    global robot, depth_data, digitone, digittwo, gripper_State
+    robot = RPCClient("http://172.29.4.15:8000/RPC2")
+
+    camera_config = Config()
+    camera_pipeline = Pipeline()
+    try:
+        profile_list = camera_pipeline.get_stream_profile_list(OBSensorType.COLOR_SENSOR)
+        try:
+            color_profile: VideoStreamProfile = profile_list.get_video_stream_profile(1920, 0, OBFormat.RGB, 15)
+        except OBError as e:
+            print(e)
+            color_profile = profile_list.get_default_video_stream_profile()
+            print("color profile: ", color_profile)
+        config.enable_stream(color_profile)
+    except Exception as e:
+        print(e)
+        return
+    camera_pipeline.start(camera_config)
+
+    print("Camera stream started")
 
     model, noise_scheduler = create_model_scheduler(config, device)
 
@@ -83,11 +126,49 @@ def run_inference():
     image_queue = [] # Past 4 observation images
     states = []
 
-    while(len(image_queue) > config['obs_horizon']):
+    while True:
+
+        color_image = get_image_from_stream(camera_pipeline)
+        if color_image is None:
+            continue
+
+        if len(image_queue) == 0:
+            image_queue = [color_image for _ in range(config['obs_horizon'])]
+        else:
+            image_queue.pop(0)
+            image_queue.append(color_image)
+
+        joint_states = robot.call("get_joint_position")
+        robot_cart_state = robot.call("get_cartesian_position")
+        gripper_state = robot.call("get_gripper_width")
+
+        robot_state = [joint_states, robot_cart_state['translation'], 
+                       robot_cart_state['rotation'], gripper_state]
+        robot_state = np.hstack(robot_state)
+        robot_state = torch.from_numpy(robot_state)
+
+        if len(states) == 0:
+            states = [robot_state for _ in range(config['obs_horizon'])]
+        else:
+            states.pop(0)
+            states.append(robot_state)
+        
+        states = torch.cat(states)
+
         images = transform_images(image_queue)
         states = normalize_data(states, data_stats['states'])
 
         action = infer_action(model, noise_scheduler, images, states, config, data_stats)
+
+        translation = action[:3]
+        rotation = action[3:6]
+        gripper_state = action[6] # Float
+
+        print(robot.call("set_cartesian_position", {
+            "position": translation,
+            "orientation": rotation}))
+        
+        robot.call("set_gripper_width", gripper_state)
 
 
 if __name__ == "__main__":
