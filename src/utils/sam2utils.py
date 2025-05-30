@@ -54,8 +54,8 @@ def sievesamzip_to_numpy(sam_out):
     return original_masks
 
 
-def filelist_to_mp4sieve(frames_dir, prefix, output_path=None):
-    images, image_paths=load_rgb_images(frames_dir, prefix=prefix, return_path=True)
+def filelist_to_mp4sieve(frames_dir, prefix, output_path=None, episodes=True):
+    images, image_paths=load_rgb_images(frames_dir, prefix=prefix, return_path=True, episodes=episodes)
     print(f"Number of loaded images: {len(images)}")
     images = images[:2]
     print(f"Number of images to be worked on by sieve: {len(images)}")
