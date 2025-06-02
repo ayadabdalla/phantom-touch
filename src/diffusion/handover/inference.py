@@ -212,28 +212,28 @@ def run_inference():
             states = [robot_state[None] for _ in range(config['obs_horizon'])]
         else:
             states.pop(0)
-            states.append(robot_state)
+            states.append(robot_state[None])
         
-        states = np.concatenate(states)
+        states_array = np.concatenate(states)
 
         images = transform_images(image_queue, [240, 432])
 
-        states = normalize_data(states, data_stats['states'])
+        states_array = normalize_data(states_array, data_stats['states'])
 
-        states = torch.from_numpy(states).unsqueeze(0).to(dtype=torch.float32, device=device)
+        states_array = torch.from_numpy(states_array).unsqueeze(0).to(dtype=torch.float32, device=device)
         images = images.to(dtype=torch.float32, device=device) 
 
-        action = infer_action(model, noise_scheduler, images, states, config, data_stats)
+        action = infer_action(model, noise_scheduler, images, states_array, config, data_stats)
 
         translation = action[0, 1, :3]
         rotation = action[0, 1, 3:6]
         gripper_state = action[0, 1, 6] # Float
 
         print(robot.call("set_cartesian_position", {
-            "position": translation,
-            "orientation": rotation}))
+            "position": translation.tolist(),
+            "orientation": rotation.tolist(),}))
         
-        robot.call("set_gripper_width", gripper_state)
+        robot.call("set_gripper_width", gripper_state.tolist())
 
 
 if __name__ == "__main__":
