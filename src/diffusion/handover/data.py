@@ -99,6 +99,9 @@ def normalize_data(data, stats):
 
 def unnormalize_data(ndata, stats):
     ndata = (ndata + 1) / 2
+    stats['max'] = np.array(stats['max'], dtype=np.float32)
+    stats['min'] = np.array(stats['min'], dtype=np.float32)
+    
     data = ndata * (stats['max'] - stats['min']) + stats['min']
     return data
 

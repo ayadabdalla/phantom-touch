@@ -15,7 +15,7 @@ import torchvision.transforms.functional as TF
 import numpy as np
 from PIL import Image as PILImage
 from typing import List, Tuple, Dict, Optional
-# import pdb
+import pdb
 
 import cv2
 from pyorbbecsdk import Config
@@ -97,7 +97,7 @@ def infer_action(model, noise_scheduler, nimage, nstates, config, data_stats):
 
         # unnormalize action
         naction = naction.detach().cpu().numpy()
-        pred_action = unnormalize_data(pred_action, stats=data_stats['actions'])
+        pred_action = unnormalize_data(naction, stats=data_stats['actions'])
 
         return pred_action
 
@@ -159,9 +159,12 @@ def run_inference():
         
         except Exception as e:
             print(f"Camera initialization failed: {e}")
+            if i == 9:
+                print("Camera Init failed, exiting...")
+                import sys
+                sys.exit()
             time.sleep(1)
             continue
-
 
     print("Camera stream started")
 
@@ -192,6 +195,7 @@ def run_inference():
             image_queue.pop(0)
             image_queue.append(color_image)
 
+
         joint_states = robot.call("get_joint_position")
         robot_cart_state = robot.call("get_cartesian_position")
         gripper_state = robot.call("get_gripper_width")
@@ -203,7 +207,6 @@ def run_inference():
         robot_state = [joint_states['joint_positions'], robot_cart_state['position'], robot_cart_state['orientation'], gripper_state['gripper_width']]
 
         robot_state = np.hstack(robot_state)
-        # robot_state = torch.from_numpy(robot_state)
 
         if len(states) == 0:
             states = [robot_state[None] for _ in range(config['obs_horizon'])]
@@ -215,18 +218,16 @@ def run_inference():
 
         images = transform_images(image_queue, [240, 432])
 
-        import pdb
-        pdb.set_trace()
         states = normalize_data(states, data_stats['states'])
 
-        images = images.to(device) 
-        states = states.to(device) 
+        states = torch.from_numpy(states).unsqueeze(0).to(dtype=torch.float32, device=device)
+        images = images.to(dtype=torch.float32, device=device) 
 
         action = infer_action(model, noise_scheduler, images, states, config, data_stats)
 
-        translation = action[:3]
-        rotation = action[3:6]
-        gripper_state = action[6] # Float
+        translation = action[0, 1, :3]
+        rotation = action[0, 1, 3:6]
+        gripper_state = action[0, 1, 6] # Float
 
         print(robot.call("set_cartesian_position", {
             "position": translation,
