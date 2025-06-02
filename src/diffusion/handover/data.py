@@ -89,7 +89,9 @@ def get_data_stats(data):
 
 def normalize_data(data, stats):
     # nomalize to [0,1]
-        
+    data =np.array(data, dtype=np.float32)
+    stats['max'] = np.array(stats['max'], dtype=np.float32)
+    stats['min'] = np.array(stats['min'], dtype=np.float32)
     ndata = (data - stats['min']) / (stats['max'] - stats['min'])
     # normalize to [-1, 1]
     ndata = ndata * 2 - 1

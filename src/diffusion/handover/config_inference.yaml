@@ -1,4 +1,4 @@
-load_ckpt: null
+load_ckpt: /mnt/dataset_drive/ayad/phantom-touch/models/diffusion/latest.pth
 
 pred_horizon: 4
 obs_horizon: 4

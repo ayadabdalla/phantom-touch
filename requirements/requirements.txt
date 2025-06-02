@@ -8,3 +8,5 @@ mmpose @ git+ssh://git@github.com/ViTAE-Transformer/ViTPose.git@main
 hydra-core
 omegaconf
 webdataset
+diffusers=0.11.1
+wandb

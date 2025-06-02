@@ -1,13 +1,21 @@
+import time
 import torch
 from data import unnormalize_data, normalize_data
 from train_eval import create_model_scheduler, read_config
+import yaml
+# def read_config(config_path):
+
+#     with open(config_path, "r") as f:
+#         config = yaml.safe_load(f)
+    
+#     return config
 from torchvision import transforms
 import torchvision.transforms.functional as TF
 
 import numpy as np
 from PIL import Image as PILImage
 from typing import List, Tuple, Dict, Optional
-import pdb
+# import pdb
 
 import cv2
 from pyorbbecsdk import Config
@@ -16,6 +24,37 @@ from pyorbbecsdk import OBSensorType, OBFormat
 from pyorbbecsdk import Pipeline, FrameSet
 from pyorbbecsdk import VideoStreamProfile
 
+# RPC CLIENT
+import xmlrpc.client
+
+class RPCClient:
+    def __init__(self, server_url="http://localhost:8000/RPC2"):
+        self.server_url = server_url
+        self.proxy = xmlrpc.client.ServerProxy(self.server_url, allow_none=True)
+        
+    def call(self, method_name, *args):
+        """Call a remote method by name with provided arguments"""
+        if not hasattr(self.proxy, method_name):
+            raise AttributeError(f"Remote server has no method named '{method_name}'")
+        
+        method = getattr(self.proxy, method_name)
+        try:
+            result = method(*args)
+            return result
+        except xmlrpc.client.Fault as err:
+            print(f"A fault occurred: {err.faultCode} {err.faultString}")
+            raise
+        except xmlrpc.client.ProtocolError as err:
+            print(f"Protocol error: {err.url} {err.errcode} {err.errmsg}")
+            raise
+        except Exception as err:
+            print(f"Unexpected error: {err}")
+            raise
+    
+    def close(self):
+        """Close the connection to the server"""
+        if hasattr(self.proxy, '_ServerProxy__close'):
+            self.proxy._ServerProxy__close()
 
 def get_image_from_stream(pipeline):
     frames: FrameSet = pipeline.wait_for_frames(100)
@@ -25,9 +64,11 @@ def get_image_from_stream(pipeline):
     if color_frame is None:
         return None
     color_image = color_frame.get_data()
-    import pdb
-    pdb.set_trace()
+
+    # import pdb
+    # pdb.set_trace()
     color_image = color_image.reshape((1080, 1920, 3))
+    color_image = cv2.resize(color_image, (432, 240))
     color_image = cv2.cvtColor(color_image, cv2.COLOR_RGB2BGR)
     return color_image
 
@@ -73,9 +114,10 @@ def transform_images(pil_imgs: List[PILImage.Image], image_size: List[int], cent
         pil_imgs = [pil_imgs]
     transf_imgs = []
     for pil_img in pil_imgs:
-        pil_img = pil_img.resize(image_size) 
+        # pil_img = pil_img.resize(image_size) 
         transf_img = transform_type(pil_img)
         transf_img = torch.unsqueeze(transf_img, 0)
+        transf_img = torch.unsqueeze(transf_img, 0)  # Add batch dimension
         transf_imgs.append(transf_img)
     return torch.cat(transf_imgs, dim=1)
 
@@ -93,21 +135,33 @@ def run_inference():
     global robot, depth_data, digitone, digittwo, gripper_State
     robot = RPCClient("http://172.29.4.15:8000/RPC2")
 
-    camera_config = Config()
-    camera_pipeline = Pipeline()
-    try:
-        profile_list = camera_pipeline.get_stream_profile_list(OBSensorType.COLOR_SENSOR)
+    for i in range(10):
         try:
-            color_profile: VideoStreamProfile = profile_list.get_video_stream_profile(1920, 0, OBFormat.RGB, 15)
-        except OBError as e:
-            print(e)
-            color_profile = profile_list.get_default_video_stream_profile()
-            print("color profile: ", color_profile)
-        config.enable_stream(color_profile)
-    except Exception as e:
-        print(e)
-        return
-    camera_pipeline.start(camera_config)
+
+            camera_config = Config()
+            camera_pipeline = Pipeline()
+
+                
+            try:
+                profile_list = camera_pipeline.get_stream_profile_list(OBSensorType.COLOR_SENSOR)
+                try:
+                    color_profile: VideoStreamProfile = profile_list.get_video_stream_profile(1920, 0, OBFormat.RGB, 15)
+                except OBError as e:
+                    print(e)
+                    color_profile = profile_list.get_default_video_stream_profile()
+                    print("color profile: ", color_profile)
+                camera_config.enable_stream(color_profile)
+            except Exception as e:
+                print(e)
+                return
+
+            camera_pipeline.start(camera_config)
+        
+        except Exception as e:
+            print(f"Camera initialization failed: {e}")
+            time.sleep(1)
+            continue
+
 
     print("Camera stream started")
 
@@ -141,22 +195,32 @@ def run_inference():
         joint_states = robot.call("get_joint_position")
         robot_cart_state = robot.call("get_cartesian_position")
         gripper_state = robot.call("get_gripper_width")
+        if "error" in robot_cart_state.keys():
+            print("Error in getting robot cartesian state:", robot_cart_state['error'])
+            continue
+        from scipy.spatial.transform import Rotation as R
+        robot_cart_state['orientation'] = R.from_matrix(robot_cart_state['orientation']).as_euler('xyz', degrees=False)
+        robot_state = [joint_states['joint_positions'], robot_cart_state['position'], robot_cart_state['orientation'], gripper_state['gripper_width']]
 
-        robot_state = [joint_states, robot_cart_state['translation'], 
-                       robot_cart_state['rotation'], gripper_state]
         robot_state = np.hstack(robot_state)
-        robot_state = torch.from_numpy(robot_state)
+        # robot_state = torch.from_numpy(robot_state)
 
         if len(states) == 0:
-            states = [robot_state for _ in range(config['obs_horizon'])]
+            states = [robot_state[None] for _ in range(config['obs_horizon'])]
         else:
             states.pop(0)
             states.append(robot_state)
         
-        states = torch.cat(states)
+        states = np.concatenate(states)
 
-        images = transform_images(image_queue)
+        images = transform_images(image_queue, [240, 432])
+
+        import pdb
+        pdb.set_trace()
         states = normalize_data(states, data_stats['states'])
+
+        images = images.to(device) 
+        states = states.to(device) 
 
         action = infer_action(model, noise_scheduler, images, states, config, data_stats)
 
