@@ -40,7 +40,7 @@ print("Running SAM2-SIEVE...")
 sam = sieve.function.get("sieve/text-to-segment")
 input_video = filelist_to_mp4sieve(
     images_path,
-    prefix="rgb",
+    prefix="frame_0",
     output_path=os.path.join(sam2_sieve_cfg.output_dir, video_name),
     episodes=False  # Use flat directory structure
 )
@@ -77,7 +77,7 @@ mask_frames = np.array(mask_frames)
 #### Store results ####
 print("Saving masks...")
 frame_names = sorted(
-    [os.path.join(images_path, f) for f in os.listdir(images_path) if f.startswith("rgb") and f.endswith(".png")],
+    [os.path.join(images_path, f) for f in os.listdir(images_path) if f.startswith("frame") and f.endswith(".png")],
     key=lambda p: os.path.splitext(os.path.basename(p))[0]
 )
 print(f"Number of frames: {len(frame_names)}")
