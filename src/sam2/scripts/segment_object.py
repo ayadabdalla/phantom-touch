@@ -8,6 +8,7 @@ import matplotlib
 import datetime
 from omegaconf import OmegaConf
 from sam2.build_sam import build_sam2_video_predictor
+from utils.rgb_utils import load_rgb_images
 from utils.sam2utils import (
     extract_centroid,
     save_mp4video,
@@ -36,19 +37,22 @@ images_path = sam2_sieve_cfg.images_path  # directly set in config
 video_name = f"color_video_compiled_for_sieve_{now}.mp4"
 
 #### First workflow component: SAM2-SIEVE ####
-print("Running SAM2-SIEVE...")
-sam = sieve.function.get("sieve/text-to-segment")
-input_video = filelist_to_mp4sieve(
-    images_path,
-    prefix="frame_0",
-    output_path=os.path.join(sam2_sieve_cfg.output_dir, video_name),
-    episodes=False  # Use flat directory structure
-)
-sam_out = sam.run(input_video, sam2_sieve_cfg.text_prompt)
-original_masks = sievesamzip_to_numpy(sam_out)
+# print("Running SAM2-SIEVE...")
+# sam = sieve.function.get("sieve/text-to-segment")
+# input_video = filelist_to_mp4sieve(
+#     images_path,
+#     prefix="frame_0",
+#     output_path=os.path.join(sam2_sieve_cfg.output_dir, video_name),
+#     episodes=False  # Use flat directory structure
+# )
+# sam_out = sam.run(input_video, sam2_sieve_cfg.text_prompt)
+# original_masks = sievesamzip_to_numpy(sam_out)
 
-centroids = [extract_centroid(mask) for mask in original_masks if extract_centroid(mask) is not None]
-centroids = np.array(centroids)
+# centroids = [extract_centroid(mask) for mask in original_masks if extract_centroid(mask) is not None]
+# centroids = np.array(centroids)
+
+images = load_rgb_images(base_dir=images_path, return_path=False, episodes=False, BGR=False)
+centroids = np.array([[300, 480-130]])
 
 #### Second workflow component: VIDEO-SAM2 ####
 print("Running VIDEO-SAM2...")
@@ -77,7 +81,7 @@ mask_frames = np.array(mask_frames)
 #### Store results ####
 print("Saving masks...")
 frame_names = sorted(
-    [os.path.join(images_path, f) for f in os.listdir(images_path) if f.startswith("frame") and f.endswith(".png")],
+    [os.path.join(images_path, f) for f in os.listdir(images_path) if f.endswith(".png")],
     key=lambda p: os.path.splitext(os.path.basename(p))[0]
 )
 print(f"Number of frames: {len(frame_names)}")

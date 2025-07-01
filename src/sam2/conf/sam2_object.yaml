@@ -1,10 +1,10 @@
 sam2sieve:
-  images_path: /home/epon04yc/ontouch/robot_shortcuts/recordings/utn_cup_pick_and_place/recording_1749027975/rgb_frames
-  output_dir: /home/epon04yc/ontouch/robot_shortcuts/recordings/utn_cup_pick_and_place/recording_1749027975/sam2-sieve_output
-  text_prompt: "cup"  # or whatever prompt you're using
+  images_path: /home/epon04yc/ontouch/data/recordings/pick_and_place/extracted_recording_1749632905/rs1_color_images
+  output_dir: /home/epon04yc/ontouch/data/recordings/pick_and_place/extracted_recording_1749632905/sam2sieve_output_cake
+  text_prompt: "object in the center"  # or whatever prompt you're using
 
 sam2videoPredictor:
-  video_frames_dir: /home/epon04yc/ontouch/robot_shortcuts/recordings/utn_cup_pick_and_place/recording_1749027975/rgb_frames
-  output_dir: /home/epon04yc/ontouch/robot_shortcuts/recordings/utn_cup_pick_and_place/recording_1749027975/sam2-vid_output
+  video_frames_dir: /home/epon04yc/ontouch/data/recordings/pick_and_place/extracted_recording_1749632905/rs1_color_images
+  output_dir: /home/epon04yc/ontouch/data/recordings/pick_and_place/extracted_recording_1749632905/sam2-vid_output
   sam2_checkpoint: /mnt/dataset_drive/ayad/phantom-touch/models/sam2/checkpoints/sam2.1_hiera_large.pt
   model_cfg: configs/sam2.1/sam2.1_hiera_l.yaml # relative to sam2

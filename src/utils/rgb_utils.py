@@ -19,7 +19,7 @@ def natural_key(string_):
     return [int(text) if text.isdigit() else text.lower() for text in re.split('(\d+)', string_)]
 
 
-def load_rgb_images(base_dir, prefix="Color_", return_path=False, episodes=True):
+def load_rgb_images(base_dir, prefix="Color_", return_path=False, episodes=True, BGR=False):
     # image_paths = glob.glob(os.path.join(base_dir, "e*", f"{prefix}*.png"))
     image_paths = []
     for root, dirs, files in os.walk(os.path.join(base_dir)):
@@ -29,11 +29,22 @@ def load_rgb_images(base_dir, prefix="Color_", return_path=False, episodes=True)
                     image_paths.append(os.path.join(root, file))
         elif not episodes:
             for file in files:
-                if file.startswith(prefix) and file.endswith(".png"):
+                if file.endswith(".png"):
                     image_paths.append(os.path.join(root, file))
 
     image_paths = sorted(image_paths, key=natural_key)  # <--- natural sort
     images = [cv2.imread(p) for p in tqdm(image_paths, desc="reading images")]
+
+    if BGR:
+        # convert images to RGB and overwrite the original images
+        images = [cv2.cvtColor(img, cv2.COLOR_BGR2RGB) for img in images]
+        # overwrite the saved on disk original images with RGB images
+        for i, img in enumerate(images):
+            cv2.imwrite(image_paths[i], img)
+
+    if len(images) == 0:
+        raise ValueError(f"No images found in {base_dir} with prefix {prefix}")
+
     if return_path:
         return np.stack(images, axis=0), image_paths
     else:
