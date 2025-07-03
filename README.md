@@ -58,6 +58,7 @@ source .phantom-touch/bin/activate
       **Function**: `load_video_frames_from_jpg_images`    
       **Line**: 246
       **Change** Add `.png` extension for flexebility: [".jpg", ".jpeg", ".JPG", ".JPEG",".png", ".PNG"]
+      
       **Line**: 248  
       **Change**: Remove `int()` typecasting.
 
