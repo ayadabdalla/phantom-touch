@@ -1,5 +1,6 @@
 import sys
 import sieve
+import matplotlib.pyplot as plt
 import cv2
 import os
 import numpy as np
@@ -51,8 +52,28 @@ video_name = f"color_video_compiled_for_sieve_{now}.mp4"
 # centroids = [extract_centroid(mask) for mask in original_masks if extract_centroid(mask) is not None]
 # centroids = np.array(centroids)
 
-images = load_rgb_images(base_dir=images_path, return_path=False, episodes=False, BGR=False)
-centroids = np.array([[300, 480-130]])
+images = load_rgb_images(base_dir=images_path, return_path=False, episodes=False, BGR=False)[58:450]
+# Show the first image and get a click
+fig, ax = plt.subplots()
+ax.imshow(images[0])  # Show first image
+plt.title("Click to select centroid")
+centroid_coords = []
+
+def onclick(event):
+    if event.xdata is not None and event.ydata is not None:
+        centroid_coords.append([event.xdata, event.ydata])
+        print(f"Selected centroid: ({event.xdata:.1f}, {event.ydata:.1f})")
+        plt.close()  # Close the figure after one click
+
+cid = fig.canvas.mpl_connect('button_press_event', onclick)
+plt.show()
+
+# Convert to numpy array if a point was selected
+if centroid_coords:
+    centroids = np.array(centroid_coords)
+else:
+    raise ValueError("No centroid was selected.")
+# centroids = np.array([[300, 480-130]])
 
 #### Second workflow component: VIDEO-SAM2 ####
 print("Running VIDEO-SAM2...")
@@ -84,6 +105,7 @@ frame_names = sorted(
     [os.path.join(images_path, f) for f in os.listdir(images_path) if f.endswith(".png")],
     key=lambda p: os.path.splitext(os.path.basename(p))[0]
 )
+frame_names = frame_names[58:450]  # Adjust to match the processed frames
 print(f"Number of frames: {len(frame_names)}")
 
 output_dir = sam2video_cfg.output_dir
