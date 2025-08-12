@@ -1,0 +1,3 @@
+[submodule "src/hamer/third-party/ViTPose"]
+	path = src/hamer/third-party/ViTPose
+	url = git@github.com:ViTAE-Transformer/ViTPose.git
