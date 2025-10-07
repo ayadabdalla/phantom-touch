@@ -1,4 +1,5 @@
 # Phantom Touch Setup Guide
+Convert human demos to robot data adapted from https://phantom-human-videos.github.io/.
 
 ## Clone the Repository
 ```bash
