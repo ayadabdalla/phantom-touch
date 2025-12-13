@@ -20,7 +20,7 @@ from tqdm import tqdm
 # script setup: configs, paths, and device
 user = os.getenv("USER")
 repo_dir = search_folder(f"/home/{user}/", "phantom-touch")
-config = OmegaConf.load(f"{repo_dir}/src/hamer/conf/vitpose_segmentation.yaml")
+config = OmegaConf.load(f"{repo_dir}/src/segment_hands/cfg/vitpose_segmentation.yaml")
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 cfg_path = (
     Path(hamer.__file__).parent / "configs" / "cascade_mask_rcnn_vitdet_h_75ep.py"

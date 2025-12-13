@@ -14,8 +14,6 @@
 #include "libobsensor/ObSensor.hpp"
 #include "utils.hpp"
 
-using namespace std;
-
 #define KEY_ESC 27
 #define KEY_R 82
 #define KEY_r 114
@@ -34,13 +32,15 @@ using namespace std;
 
 #include "libobsensor/hpp/Error.hpp"
 
-bool isWaitRebootComplete_ = false;
-bool isDeviceRemoved_ = false;
+
+using namespace std;
 std::condition_variable waitRebootCondition_;
 std::mutex waitRebootMutex_;
 std::string deviceUid_;
 std::string deviceSN_;
 std::shared_ptr<ob::Device> rebootedDevice_;
+bool isWaitRebootComplete_ = false;
+bool isDeviceRemoved_ = false;
 
 int getch_noblock() {
   if (kbhit())

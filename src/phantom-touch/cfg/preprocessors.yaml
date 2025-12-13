@@ -1,1 +1,3 @@
-split_episodes: False
+split_episodes: True
+split_threshold: 2
+minimum_frames: 10
