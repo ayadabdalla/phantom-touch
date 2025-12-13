@@ -17,8 +17,12 @@ _DATA
 .phantom-touch
 pyorbbecsdk
 
+# third party
+third-party/
+
 #env
 *.egg-info
 
 # pyc
 *.pyc
+*.stl

@@ -1,3 +1,8 @@
+/* This file saves depth and color frames from an Orbbec camera to disk,
+   along with metadata about the camera depth intrinsics and device information.
+   It uses the Orbbec SDK for camera interaction and OpenCV for image handling.
+*/
+
 #include <cmath>
 #include <fstream>
 #include <iostream>

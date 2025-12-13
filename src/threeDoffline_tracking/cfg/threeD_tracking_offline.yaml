@@ -1,0 +1,16 @@
+data_dir: /mnt/dataset_drive/ayad/data/phantom-touch/data/output/handover_collection_0/dataset_temp
+mask_output_dir: /mnt/dataset_drive/ayad/data/phantom-touch/data/output/handover_collection_0/sam2_object_masks
+dataset_name: handover_collection_0
+dataset_format: npz
+mask_objects: True
+
+sam2videoPredictor:
+  sam2_checkpoint: /home/epon04yc/phantom-touch/src/sam2/models/checkpoints/sam2.1_hiera_large.pt
+  model_cfg: configs/sam2.1/sam2.1_hiera_l.yaml # relative to sam2
+
+CAD_MODEL_PATH: /mnt/dataset_drive/ayad/phantom-touch/data/cad_models/banana_scaled.obj
+
+depth_data_dir: /mnt/dataset_drive/ayad/data/phantom-touch/data/recordings/handover_collection_0/episodes/e0
+depth_shape: [1080, 1920]
+threeD_tracking_output_dir: /mnt/dataset_drive/ayad/data/phantom-touch/data/output/handover_collection_0/threeD_tracking_offline
+CAMERA_TO_ROBOT_TRANSFORM_PATH: /home/epon04yc/phantom-touch/src/calibration/robotbase_camera_transform_orbbec_fr4.npy

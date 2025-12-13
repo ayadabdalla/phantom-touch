@@ -1,0 +1,12 @@
+experiment_name: handover_collection_0 # Name of the experiment
+vitpose_out_folder: /mnt/dataset_drive/ayad/phantom-touch/data/output/${experiment_name}/vitpose_output/episodes # Output folder to save vitpose results
+file_type: ['*.jpg', '*.png']
+img_folder: /mnt/dataset_drive/ayad/phantom-touch/data/recordings/${experiment_name} # Folder with input images
+crop:
+  x1: 400
+  y1: 280 
+  x2: 1200 
+  y2: 840
+resolution:
+  width: 432
+  height: 240

@@ -28,7 +28,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 OmegaConf.register_new_resolver(
     "phantom-touch", lambda: search_folder("/home", "phantom-touch"))
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-cfg = OmegaConf.load(f"{parent_dir}/conf/sam2_segmentation.yaml")
+cfg = OmegaConf.load(f"{parent_dir}/conf/sam2_object_by_text.yaml")
 sam2_sieve_cfg = cfg.sam2sieve
 if not os.path.exists(sam2_sieve_cfg.output_dir):
     os.makedirs(sam2_sieve_cfg.output_dir)

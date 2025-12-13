@@ -119,8 +119,11 @@ def filter_episode(npz_file):
     state = np.array(npz_file["state"]).reshape(-1, 14)
     keypoints = np.array(npz_file["keypoints"]).reshape(-1, 21, 3)
     inpainted = np.array(npz_file["inpainted"]).reshape(-1, 240, 432, 3)
+    originals = np.array(npz_file["original"])
+    index = np.array(npz_file["indexes"]).reshape(-1)
     filtered_xyz = np.zeros_like(action[:, :3])
     filtered_euler = np.zeros_like(action[:, 3:6])
+
     indeces = set()
     for i in range(0, len(action) - 2):
         # Smooth position (x, y, z)
@@ -145,6 +148,10 @@ def filter_episode(npz_file):
     state = np.delete(state, indeces, axis=0)
     keypoints = np.delete(keypoints, indeces, axis=0)
     inpainted = np.delete(inpainted, indeces, axis=0)
+    originals = np.delete(originals, indeces, axis=0)
+    index = np.delete(index, indeces, axis=0)
+    # resize originals to match image_0 size
+    originals = np.array([cv2.resize(img, (432, 240)) for img in originals])
 
     print(f"Filtered out: {len(indeces)}")
     data ={
@@ -152,7 +159,9 @@ def filter_episode(npz_file):
         "image_0": image_0,
         "state": state,
         "keypoints": keypoints,
-        "inpainted": inpainted
+        "inpainted": inpainted,
+        "original": originals,
+        "indexes": index
     }
     return (
         data

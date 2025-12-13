@@ -1,0 +1,14 @@
+metadata:
+  repo_dir: ${phantom-touch:}
+  data_dir: /mnt/dataset_drive/ayad/data/phantom-touch
+  model_dir: /mnt/dataset_drive/ayad/data/phantom-touch
+  experiment_name: handover_collection_0 # Name of the experiment
+
+masks_directory: ${metadata.data_dir}/data/output/${metadata.experiment_name}/sam2-vid_output/episodes
+trajectory_directory: ${metadata.data_dir}/data/output/${metadata.experiment_name}/trajectories
+recordings_directory: ${metadata.data_dir}/data/recordings/${metadata.experiment_name}/episodes
+sam2hand_directory: ${metadata.data_dir}/data/output/${metadata.experiment_name}/sam2hand_output/episodes
+hamer_output_directory: ${metadata.data_dir}/data/output/${metadata.experiment_name}/hamer_output/episodes
+vitpose_output_directory: ${metadata.data_dir}/data/output/${metadata.experiment_name}/vitpose_output/episodes
+dataset_directory: ${metadata.data_dir}/data/output/${metadata.experiment_name}/dataset
+inpainting_directory: ${metadata.data_dir}/data/output/${metadata.experiment_name}/inpainting_output/episodes

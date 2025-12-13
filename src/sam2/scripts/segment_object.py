@@ -27,32 +27,14 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 OmegaConf.register_new_resolver("phantom-touch", lambda: search_folder("/home", "phantom-touch"))
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 cfg = OmegaConf.load(f"{parent_dir}/conf/sam2_object.yaml")
-sam2_sieve_cfg = cfg.sam2sieve
 sam2video_cfg = cfg.sam2videoPredictor
 
-os.makedirs(sam2_sieve_cfg.output_dir, exist_ok=True)
 os.makedirs(sam2video_cfg.output_dir, exist_ok=True)
 
 # Use the flat directory (no episodes)
-images_path = sam2_sieve_cfg.images_path  # directly set in config
-video_name = f"color_video_compiled_for_sieve_{now}.mp4"
+images_path = sam2video_cfg.video_frames_dir  # directly set in config
 
-#### First workflow component: SAM2-SIEVE ####
-# print("Running SAM2-SIEVE...")
-# sam = sieve.function.get("sieve/text-to-segment")
-# input_video = filelist_to_mp4sieve(
-#     images_path,
-#     prefix="frame_0",
-#     output_path=os.path.join(sam2_sieve_cfg.output_dir, video_name),
-#     episodes=False  # Use flat directory structure
-# )
-# sam_out = sam.run(input_video, sam2_sieve_cfg.text_prompt)
-# original_masks = sievesamzip_to_numpy(sam_out)
-
-# centroids = [extract_centroid(mask) for mask in original_masks if extract_centroid(mask) is not None]
-# centroids = np.array(centroids)
-
-images = load_rgb_images(base_dir=images_path, return_path=False, episodes=False, BGR=False)[58:450]
+images = load_rgb_images(base_dir=images_path, return_path=False, episodes=False, BGR=False)
 # Show the first image and get a click
 fig, ax = plt.subplots()
 ax.imshow(images[0])  # Show first image
@@ -105,7 +87,7 @@ frame_names = sorted(
     [os.path.join(images_path, f) for f in os.listdir(images_path) if f.endswith(".png")],
     key=lambda p: os.path.splitext(os.path.basename(p))[0]
 )
-frame_names = frame_names[58:450]  # Adjust to match the processed frames
+frame_names = frame_names  # Adjust to match the processed frames
 print(f"Number of frames: {len(frame_names)}")
 
 output_dir = sam2video_cfg.output_dir

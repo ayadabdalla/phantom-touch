@@ -40,7 +40,7 @@ env = fr3_sim_env(
     camera_set_cfg=default_mujoco_cameraset_cfg(),
 )
 obs, _ = env.reset()
-for ep in range(0,112):
+for ep in range(0,1):
     recordings_root = os.path.join(
         config.recordings_directory, f"e{ep}"
     )
@@ -70,7 +70,7 @@ for ep in range(0,112):
     sam2_pcds, sam2_pcd_paths = load_pcds(sam2hand_root, prefix="Color_", return_path=True)
 
     extrinsic = np.load(
-        "/home/epon04yc/phantom-touch/src/phantom-touch/data/robotbase_camera_transform_orbbec_fr4.npy"
+        "/home/epon04yc/phantom-touch/src/calibration/robotbase_camera_transform_orbbec_fr4.npy"
     )
     assert (
         numpy_depth.shape[0] == numpy_color.shape[0]
@@ -95,6 +95,8 @@ for ep in range(0,112):
     images_per_episode = []
     states_per_episode = []
     inpainted_images_per_episode = []
+    originals_per_episode = []
+    indexes_per_episode = []
     previous_episode = os.path.basename(os.path.dirname(color_paths[0]))
 
     # start data generation
@@ -130,17 +132,21 @@ for ep in range(0,112):
         )
         if idx == last_index - 1:
             # discard the last image
+            originals_per_episode = originals_per_episode[:-1]
             images_per_episode = images_per_episode[:-1]
             inpainted_images_per_episode = inpainted_images_per_episode[:-1]
             keypoints_per_episode = keypoints_per_episode[:-1]
             states_per_episode = states_per_episode[:-1]
             actions_per_episode = actions_per_episode[1:]
+            indexes_per_episode = indexes_per_episode[:-1]
             data = {
                 "action": actions_per_episode,
                 "image_0": images_per_episode,
                 "state": states_per_episode,
                 "keypoints": keypoints_per_episode,
                 "inpainted": inpainted_images_per_episode,
+                "original": originals_per_episode,
+                "indexes": indexes_per_episode
             }
             print(f"Saving episode {previous_episode} with {len(data['action'])} frames")
             data = filter_episode(data)
@@ -153,6 +159,8 @@ for ep in range(0,112):
                 state=data["state"],
                 keypoints=data["keypoints"],
                 inpainted=data["inpainted"],
+                original=data["original"],
+                indexes=data["indexes"],
             )
             env.reset()
             break
@@ -188,19 +196,18 @@ for ep in range(0,112):
                     colors[j] = [1, 1, 1]
                 points[j] = [x, y, z]
             if invalid_keypoint:
+                print("Invalid keypoint detected, skipping frame.")
                 continue
             invalid_keypoint = False
             points[:, 0] = (points[:, 0] - cx) * points[:, 2] / fx / 1000.0
             points[:, 1] = (points[:, 1] - cy) * points[:, 2] / fy / 1000.0
             points[:, 2] = points[:, 2] / 1000.0
-
             pcd = o3d.geometry.PointCloud()
             pcd.points = o3d.utility.Vector3dVector(points)
             pcd.colors = o3d.utility.Vector3dVector(colors)
             pcds_per_frame.append(pcd)
 
             sam2_pcd = sam2_pcd.voxel_down_sample(voxel_size=0.01)
-
             chamfer_distance = pcd.compute_point_cloud_distance(sam2_pcd)
             chamfer_distance = np.asarray(chamfer_distance)
             chamfer_distance = np.mean(chamfer_distance)
@@ -210,8 +217,10 @@ for ep in range(0,112):
             target_actions_per_frame.append(action)
 
         if len(chamfer_distances) == 0:
+            print("No valid keypoints detected, skipping frame.")
             continue
         elif min(chamfer_distances) > 0.005:
+            print("No good matching keypoints, skipping frame.")
             continue
         min_chamfer_distance = min(chamfer_distances)
         min_chamfer_index = chamfer_distances.index(min_chamfer_distance)
@@ -255,5 +264,7 @@ for ep in range(0,112):
         actions_per_episode.append(action)
         keypoints_per_episode.append(keypoints)
         inpainted_images_per_episode.append(inpainted)
+        originals_per_episode.append(color_frame)
+        indexes_per_episode.append(idx)
 
     print("Batch processing complete.")
