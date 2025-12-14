@@ -209,8 +209,10 @@ cd src/sam2/scripts
 python segment_objVideo_byText.py
 ```
 
-Next, we need to project the segmented hands into 3D, to do so, we run:
-
+Next, we need to project the segmented hands into 3D, to do so, we run and adapt:
+```
+src/phantom-touch/cfg/3d_projection.yaml
+```
 ```
 python src/phantom-touch/scripts/project_sam2hand_to_3d.py
 ```

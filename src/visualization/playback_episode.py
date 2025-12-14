@@ -1,11 +1,11 @@
 
 import cv2
 import numpy as np
-episodes = [
-    f"/mnt/dataset_drive/ayad/data/phantom-touch/data/output/handover_collection_0/dataset_temp/e{i}/handover_collection_0_e{i}.npz"
-    for i in range(0,1)
-]
-i=1
+from omegaconf import OmegaConf
+import os
+
+from utils.sam2utils import search_folder
+repo_dir = search_folder(f"/home/{os.getenv('USER')}/", "phantom-touch")
 def overlay_images(mujoco_image, inpainted_image):
     # Convert images to float32 and normalize to [0, 1]
     mujoco_image = mujoco_image.astype(np.float32) / 255.0
@@ -31,35 +31,41 @@ def overlay_images(mujoco_image, inpainted_image):
     # Convert back to 8-bit for display
     overlayed_image = (overlayed_image * 255).astype(np.uint8)
     return overlayed_image
+if __name__ == "__main__":
+    visualization_cfg = OmegaConf.load(f"{repo_dir}/src/visualization/cfg/visualization.yaml")
+    cfg = OmegaConf.load(f"{repo_dir}/cfg/paths.yaml")
+    episodes = [
+        f"{cfg.dataset_output_directory}/e{i}/{cfg.metadata.experiment_name}_e{i}.npz"
+        for i in range(visualization_cfg.start_episode, visualization_cfg.end_episode + 1)
+    ]
+    
+    for episode in episodes:
+        try:
+            data = np.load(episode)
+        except FileNotFoundError:
+            print(f"File not found: {episode}")
+            continue
+        # print(f"Loaded {episode} with {len(data['image_0'])} frames")
+        # print episodes with less than 10 frames
+        if len(data["image_0"]) < 10:
+            print(f"Episode {episode} has less than 10 frames")
+    # print(i)
+        # replay the episode from image_0
+        for i,image in enumerate(data["image_0"]):
+            cv2.imshow("image", image)
+            # cv2.imshow("original", data["original"][i])
+            # save the image and the corresponding inpainted original vertically over each other
+            # cv2.imshow("inpainted", np.vstack((image, data["original"][i])))
+            # save the image
+            # overlay both images
+            overlayed = overlay_images(image,data["original"][i])
+            cv2.imshow("overlayed", overlayed)
+            if i == len(data["image_0"])//2:
+                cv2.imwrite("inpainted.png", np.vstack((image, data["original"][i])))
+                cv2.imwrite("original.png", data["original"][i])
+                cv2.imwrite("datapoint.png", image)
+                # cv2.imwrite("overlayed.png", overlayed)
+            cv2.waitKey(1)
 
-for episode in episodes:
-    try:
-        data = np.load(episode)
-    except FileNotFoundError:
-        print(f"File not found: {episode}")
-        i+=1
-        continue
-    # print(f"Loaded {episode} with {len(data['image_0'])} frames")
-    # print episodes with less than 10 frames
-    if len(data["image_0"]) < 10:
-        print(f"Episode {episode} has less than 10 frames")
-        i+=1
-# print(i)
-    # replay the episode from image_0
-    for i,image in enumerate(data["image_0"][:32]):
-        # cv2.imshow("image", image)
-        # save the image and the corresponding inpainted original vertically over each other
-        # cv2.imshow("inpainted", np.vstack((image, data["original"][i])))
-        # save the image
-        # overlay both images
-        overlayed = overlay_images(image,data["original"][i])
-        cv2.imshow("overlayed", overlayed)
-        if i == len(data["image_0"])//2:
-            cv2.imwrite("inpainted.png", np.vstack((image, data["original"][i])))
-            cv2.imwrite("original.png", data["original"][i])
-            cv2.imwrite("datapoint.png", image)
-            cv2.imwrite("overlayed.png", overlayed)
-        cv2.waitKey(1)
-
-        
-print(i)
+            
+    print(i)

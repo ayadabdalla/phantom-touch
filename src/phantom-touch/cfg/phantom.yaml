@@ -1,9 +1,9 @@
-experiment_name: handover_collection_0
-recordings_directory: /mnt/dataset_drive/ayad/data/phantom-touch/data/recordings/${experiment_name}/episodes
-sam2hand_directory: /mnt/dataset_drive/ayad/data/phantom-touch/data/output/${experiment_name}/sam2hand_output/episodes
-vitpose_output_directory: /mnt/dataset_drive/ayad/data/phantom-touch/data/output/${experiment_name}/vitpose_output/episodes
-inpainting_directory: /mnt/dataset_drive/ayad/data/phantom-touch/data/output/${experiment_name}/inpainting_output/episodes
-dataset_output_directory: /mnt/dataset_drive/ayad/data/phantom-touch/data/output/${experiment_name}/dataset_temp
+experiment_name: experimental_phantomn_touch_collection
+# recordings_directory: /mnt/dataset_drive/ayad/data/phantom-touch/data/recordings/${experiment_name}/episodes
+# sam2hand_directory: /mnt/dataset_drive/ayad/data/phantom-touch/data/output/${experiment_name}/sam2hand_output/episodes
+# vitpose_output_directory: /mnt/dataset_drive/ayad/data/phantom-touch/data/output/${experiment_name}/vitpose_output/episodes
+# inpainting_directory: /mnt/dataset_drive/ayad/data/phantom-touch/data/output/${experiment_name}/inpainting_output/episodes
+# dataset_output_directory: /mnt/dataset_drive/ayad/data/phantom-touch/data/output/${experiment_name}/dataset_temp
 
 crop:
   x1: 400
@@ -13,3 +13,7 @@ crop:
 resolution:
   width: 432
   height: 240
+
+episode_number:
+  start: 2
+  end: 7
