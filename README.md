@@ -169,4 +169,73 @@ To collect RGB, depth, raw depth, and point cloud aligned data from the Orbbec R
     cd <experiment_path>
     ./<relative path to build/bin>/OBSaveToDisk
     ```
-5.    Wait for frame initialization then press `r`
+5. Wait for frame initialization then press `r`
+
+
+# Running phantom-touch pipeline (slimming ongoing)
+To collect data, one has to first run the orbbec c++ script as described in the collection step using method 1.
+
+First adapt the config file in the following location to include your addresses and experiment name:
+```
+cfg/paths.yaml
+```
+Next, to get the vitpose hands run the following:
+```
+cd src/segment_hands/scripts
+python segment_hands.py
+```
+after adapting the config files in: 
+```
+src/segment_hands/cfg/vitpose_segmentation.yaml
+```
+
+Next, to split the episodes and move the recordings into individual episodes folders accordingly, go to the preprocessor in phantom-touch and run split_episodes, after adapting the config files:
+
+```
+src/phantom-touch/cfg/preprocessors.yaml
+```
+
+```
+cd src/phantom-touch/preprocessors
+python split_episodes.py
+```
+Next, we need to get the masks for the intended hand, to do so, we run sam2, after adapting the config:
+Before doing that, one has to get a frame with an obvious free hand at the beginning of each episode.
+```
+src/sam2/cfg/sam2_object_by_text.yaml
+```
+```
+cd src/sam2/scripts
+python segment_objVideo_byText.py
+```
+
+Next, we need to project the segmented hands into 3D, to do so, we run:
+
+```
+python src/phantom-touch/scripts/project_sam2hand_to_3d.py
+```
+Next, we need to run the inpainting model to remove the intended hand, to do so, adapt and run:
+
+```
+src/inpainting/cfg/inpaint.yaml
+```
+
+```
+python src/inpainting/scripts/inpaint.py
+```
+
+#TODO: describe the installation steps to run the inpainting in details from https://github.com/MCG-NKU/E2FGVI.git.
+
+
+Next, to run the phantom data creation, run:
+```
+cd src/phantom-touch/scripts/
+python phantom_process_data.py
+```
+In order to add touch data, we need first to render depth patches for the contacts with the object. To do so:
+
+```
+cd render_contact_depth_patches
+python render_depth_patches_phantom.py
+```
+To be continued...
