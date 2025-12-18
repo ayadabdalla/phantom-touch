@@ -4,6 +4,7 @@ metadata:
   data_dir: /home/epon04yc
   model_dir: /mnt/dataset_drive/ayad/data/phantom-touch
   experiment_name: experimental_phantomn_touch_collection
+  dataset_format: npz
 
 masks_directory: ${metadata.data_dir}/${metadata.experiment_name}/episodes
 trajectory_directory: ${metadata.data_dir}/${metadata.experiment_name}/trajectories
@@ -14,3 +15,5 @@ vitpose_output_directory: ${metadata.data_dir}/${metadata.experiment_name}/vitpo
 dataset_directory: ${metadata.data_dir}/${metadata.experiment_name}/dataset
 inpainting_directory: ${metadata.data_dir}/${metadata.experiment_name}/inpainting_output/episodes
 dataset_output_directory: ${metadata.data_dir}/${metadata.experiment_name}/dataset
+threeD_tracking_output_dir: ${metadata.data_dir}/${metadata.experiment_name}/threeD_tracking_offline
+object_masks_dir: ${metadata.data_dir}/${metadata.experiment_name}/object_masks

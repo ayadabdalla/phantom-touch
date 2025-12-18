@@ -13,10 +13,11 @@ from utils.sam2utils import search_folder
 repo_dir = search_folder("/home", "phantom-touch")
 
 class Preprocessor: 
-    def __init__(self,config):
-        self.config = config
-        self.split_threshold = config.split_threshold
-        self.minimum_frames = config.minimum_frames
+    def __init__(self,main_cfg, paths_cfg):
+        self.paths_cfg = paths_cfg
+        self.config = main_cfg
+        self.split_threshold = main_cfg.split_threshold
+        self.minimum_frames = main_cfg.minimum_frames
         self.recording_path = os.path.dirname(paths_cfg.recordings_directory)
         self.output_path = paths_cfg.recordings_directory
         self.episodes = {}
@@ -47,7 +48,7 @@ class Preprocessor:
         return episodes
 
     def get_episodes(self):
-        """ a getter for the episodes dictionary """
+        """ a getter for the episodes dictionary """            
         return self.episodes
     
     def move_recordings(self):
@@ -70,7 +71,7 @@ class Preprocessor:
     
     def move_vitpose_outputs(self):
         if self.episodes is not None:
-            output_path = paths_cfg.vitpose_output_directory
+            output_path = self.paths_cfg.vitpose_output_directory
 
             j = 0
             for i, episode in enumerate(tqdm(self.episodes.values(), desc="Processing episodes")):
@@ -85,12 +86,29 @@ class Preprocessor:
                     for file in files:
                         shutil.move(file, output_folder)
                 j += 1
-        
+
+    def read_episodes(self):
+        """read episodes as save in move_recordings"""
+        recording_path = self.paths_cfg.recordings_directory
+        episode_dirs = [d for d in os.listdir(recording_path) if os.path.isdir(os.path.join(recording_path, d)) and d.startswith("e")]
+        episodes = {}
+        for episode_dir in episode_dirs:
+            episode_path = os.path.join(recording_path, episode_dir)
+            files = glob.glob(os.path.join(episode_path, "*.raw"))
+            frame_numbers = [f.split("_")[-1].split(".")[0] for f in files]
+            frame_numbers = sorted(set(int(f) for f in frame_numbers))
+            episodes[episode_dir] = frame_numbers
+
+        episode_mappings = {}
+        for episode_name, frame_numbers in episodes.items():
+            mapping = {idx:frame_number for idx, frame_number in enumerate(frame_numbers)}
+            episode_mappings[episode_name] = mapping
+        return episode_mappings
 
 if __name__ == "__main__":
     paths_cfg=OmegaConf.load(f"{repo_dir}/cfg/paths.yaml")
     preprocess_cfg=OmegaConf.load(f"{repo_dir}/src/phantom-touch/cfg/preprocessors.yaml")
-    data_preprocessor = Preprocessor(preprocess_cfg)
+    data_preprocessor = Preprocessor(preprocess_cfg,paths_cfg=paths_cfg)
     if preprocess_cfg.split_episodes:
         episodes = data_preprocessor.split_episodes(paths_cfg.vitpose_output_directory)
         data_preprocessor.move_recordings()

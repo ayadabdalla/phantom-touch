@@ -234,6 +234,15 @@ Next, to run the phantom data creation, run:
 cd src/phantom-touch/scripts/
 python phantom_process_data.py
 ```
+
+Since 3d object tracking data are not readily available in the recording, we run and adapt the following to track the object offline:
+
+```
+src/threeDoffline_tracking/cfg/threeD_tracking_offline.yaml
+```
+```
+python src/threeDoffline_tracking/three_tracking_offline.py
+```
 In order to add touch data, we need first to render depth patches for the contacts with the object. To do so:
 
 ```
