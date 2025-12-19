@@ -4,7 +4,7 @@ import cv2
 import open3d as o3d
 import glob
 from tqdm import tqdm  # <-- NEW
-from utils.hw_camera import fx, fy, cx, cy
+from utils.hw_camera import orbbec_cx, orbbec_cy, orbbec_fx, orbbec_fy
 from utils.depth_utils import load_raw_depth_images
 from omegaconf import OmegaConf
 from utils.rgb_utils import load_rgb_images
@@ -59,7 +59,7 @@ if __name__ == "__main__":
         intrinsic = o3d.camera.PinholeCameraIntrinsic()
         start_x = threed_conf.crop.x
         start_y = threed_conf.crop.y
-        intrinsic.set_intrinsics(width, height, int(fx), int(fy), int(cx - start_x), int(cy - start_y))
+        intrinsic.set_intrinsics(width, height, int(orbbec_fx), int(orbbec_fy), int(orbbec_cx - start_x), int(orbbec_cy - start_y))
 
         # Create Open3D RGBD image
         depth_frame_o3d = o3d.geometry.Image(depth_frame)

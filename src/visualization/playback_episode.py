@@ -33,39 +33,29 @@ def overlay_images(mujoco_image, inpainted_image):
     return overlayed_image
 if __name__ == "__main__":
     visualization_cfg = OmegaConf.load(f"{repo_dir}/src/visualization/cfg/visualization.yaml")
-    cfg = OmegaConf.load(f"{repo_dir}/cfg/paths.yaml")
+    paths_cfg = OmegaConf.load(f"{repo_dir}/cfg/paths.yaml")
     episodes = [
-        f"{cfg.dataset_output_directory}/e{i}/{cfg.metadata.experiment_name}_e{i}.npz"
+        f"{paths_cfg.dataset_output_directory}/e{i}/{paths_cfg.metadata.experiment_name}_e{i}.npz"
         for i in range(visualization_cfg.start_episode, visualization_cfg.end_episode + 1)
     ]
     
-    for episode in episodes:
+    for j,episode in enumerate(episodes):
         try:
             data = np.load(episode)
         except FileNotFoundError:
             print(f"File not found: {episode}")
             continue
-        # print(f"Loaded {episode} with {len(data['image_0'])} frames")
-        # print episodes with less than 10 frames
         if len(data["image_0"]) < 10:
-            print(f"Episode {episode} has less than 10 frames")
-    # print(i)
+            print(f"Episode {episode} {j} has less than 10 frames, length: {len(data['image_0'])}, skipping...")
         # replay the episode from image_0
-        for i,image in enumerate(data["image_0"]):
-            cv2.imshow("image", image)
-            # cv2.imshow("original", data["original"][i])
-            # save the image and the corresponding inpainted original vertically over each other
-            # cv2.imshow("inpainted", np.vstack((image, data["original"][i])))
-            # save the image
-            # overlay both images
-            overlayed = overlay_images(image,data["original"][i])
-            cv2.imshow("overlayed", overlayed)
-            if i == len(data["image_0"])//2:
-                cv2.imwrite("inpainted.png", np.vstack((image, data["original"][i])))
-                cv2.imwrite("original.png", data["original"][i])
-                cv2.imwrite("datapoint.png", image)
-                # cv2.imwrite("overlayed.png", overlayed)
-            cv2.waitKey(1)
+        for i,data_image in enumerate(data["image_0"]):
+            # overlay data images on originals
+            overlayed = overlay_images(data_image,data["original"][i])
 
-            
-    print(i)
+            # cv2.imshow(f"data image_e{j}", data_image)
+            cv2.imshow("overlayed_data_image_on_original", overlayed)
+            # cv2.imshow(f"original_e{j}", data["original"][i])
+            if i == len(data["image_0"])//2:
+                cv2.imwrite("data_image_and_original.png", np.vstack((data_image, data["original"][i])))
+                cv2.imwrite("overlayed_data_image_on_original.png", overlayed)
+            cv2.waitKey(1000)

@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../ontouch"
+		},
+		{
+			"path": "../experimental_phantomn_touch_collection"
+		}
+	],
+	"settings": {}
+}

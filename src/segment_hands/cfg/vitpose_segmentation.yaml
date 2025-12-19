@@ -3,9 +3,9 @@ vitpose_out_folder: /home/epon04yc/${experiment_name}/vitpose_output/episodes # 
 file_type: ['*.jpg', '*.png']
 img_folder: /home/epon04yc/${experiment_name} # Folder with input images
 crop:
-  x1: 400
+  x1: 800
   y1: 280 
-  x2: 1200 
+  x2: 1330 
   y2: 840
 resolution:
   width: 432

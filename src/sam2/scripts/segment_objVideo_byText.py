@@ -41,6 +41,7 @@ if __name__ == "__main__":
     for root, dirs, files in os.walk(sam2_sieve_cfg.images_path):
         if os.path.basename(root).startswith("e") and os.path.basename(root)[1:].isdigit():
             episodes.append(os.path.basename(root))
+    episodes.sort(key=lambda x: int(x[1:]))  # sort by episode number
     for episode in episodes:
         if os.path.exists(os.path.join(output_path, episode)):
             print(f"Output directory {os.path.join(output_path, episode)} already exists. Skipping...")

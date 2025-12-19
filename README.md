@@ -211,10 +211,10 @@ python segment_objVideo_byText.py
 
 Next, we need to project the segmented hands into 3D, to do so, we run and adapt:
 ```
-src/phantom-touch/cfg/3d_projection.yaml
+src/segment_hands/cfg/3d_projection.yaml
 ```
 ```
-python src/phantom-touch/scripts/project_sam2hand_to_3d.py
+python src/segment_hands/scripts/project_sam2hand_to_3d.py
 ```
 Next, we need to run the inpainting model to remove the intended hand, to do so, adapt and run:
 
@@ -223,10 +223,8 @@ src/inpainting/cfg/inpaint.yaml
 ```
 
 ```
-python src/inpainting/scripts/inpaint.py
+python src/inpainting/scripts/inpaint.py src/inpainting/cfg/inpaint.yaml
 ```
-
-#TODO: describe the installation steps to run the inpainting in details from https://github.com/MCG-NKU/E2FGVI.git.
 
 
 Next, to run the phantom data creation, run:

@@ -4,7 +4,7 @@ from scipy.spatial.transform import Rotation as R
 from tqdm import tqdm
 from utils.data_utils import load_keypoints_grouped_by_frame, load_pcds
 from utils.depth_utils import load_raw_depth_images
-from utils.hw_camera import fx, fy, cx, cy
+from utils.hw_camera import orbbec_cx, orbbec_cy, orbbec_fx, orbbec_fy
 import open3d as o3d
 from utils.phantomutils import calculate_action, filter_episode, invert_keypoints, overlay_image
 from omegaconf import OmegaConf
@@ -204,8 +204,8 @@ if __name__ == "__main__":
                     print("Invalid keypoint detected, skipping frame.")
                     continue
                 invalid_keypoint = False
-                points[:, 0] = (points[:, 0] - cx) * points[:, 2] / fx / 1000.0
-                points[:, 1] = (points[:, 1] - cy) * points[:, 2] / fy / 1000.0
+                points[:, 0] = (points[:, 0] - orbbec_cx) * points[:, 2] / orbbec_fx / 1000.0
+                points[:, 1] = (points[:, 1] - orbbec_cy) * points[:, 2] / orbbec_fy / 1000.0
                 points[:, 2] = points[:, 2] / 1000.0
                 pcd = o3d.geometry.PointCloud()
                 pcd.points = o3d.utility.Vector3dVector(points)
@@ -225,7 +225,7 @@ if __name__ == "__main__":
                 print("No valid keypoints detected, skipping frame.")
                 continue
             elif min(chamfer_distances) > 0.005:
-                print("No good matching keypoints, skipping frame.")
+                print("No good matching keypoints, skipping frame, the min chamfer distance is ", min(chamfer_distances))
                 continue
             min_chamfer_distance = min(chamfer_distances)
             min_chamfer_index = chamfer_distances.index(min_chamfer_distance)

@@ -14,9 +14,6 @@ from sam2.build_sam import build_sam2_video_predictor
 # repo libraries
 from utils.rgb_utils import load_rgb_images
 from utils.sam2utils import (
-    extract_centroid,
-    save_mp4video,
-    filelist_to_mp4sieve,
     search_folder,
 )
 from phantom_touch.preprocessors.split_episodes import Preprocessor
@@ -98,7 +95,7 @@ if __name__ == "__main__":
     ]
     all_depth_data = load_raw_depth_images(depth_data_dir, depth_shape)
     all_rgb_data, all_rgb_paths = load_rgb_images(depth_data_dir, return_path=True)
-    for i,episode in enumerate(episodes):
+    for i,episode in enumerate(episodes): # loop over episodes
         try:
             episode_data = np.load(episode)
         except FileNotFoundError:

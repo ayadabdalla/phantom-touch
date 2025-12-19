@@ -107,7 +107,7 @@ class Preprocessor:
 
 if __name__ == "__main__":
     paths_cfg=OmegaConf.load(f"{repo_dir}/cfg/paths.yaml")
-    preprocess_cfg=OmegaConf.load(f"{repo_dir}/src/phantom-touch/cfg/preprocessors.yaml")
+    preprocess_cfg=OmegaConf.load(f"{repo_dir}/src/phantom_touch/cfg/preprocessors.yaml")
     data_preprocessor = Preprocessor(preprocess_cfg,paths_cfg=paths_cfg)
     if preprocess_cfg.split_episodes:
         episodes = data_preprocessor.split_episodes(paths_cfg.vitpose_output_directory)
