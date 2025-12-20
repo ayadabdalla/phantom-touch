@@ -1,7 +1,15 @@
 #!/usr/bin/env python3
 """
 Render depth patches for phantom-touch dataset using ontouch MuJoCo renderer.
-Integrates object trajectories from phantom-touch with robot trajectories and extrinsics.
+
+Integrates object trajectories from 3D offline tracking with robot trajectories.
+
+Features:
+  - Loads object poses from episode_XX_tracking.npz files
+  - Uses object_pos_in_robot and R_object_in_robot (robot frame)
+  - Filters frames by ICP fitness threshold
+  - Synchronizes with robot trajectory using episode frame indices
+  - Outputs manifest with both render and episode frame indices
 """
 
 import os
@@ -13,6 +21,7 @@ import mujoco as mj
 import mujoco.viewer
 import imageio.v2 as iio
 from pathlib import Path
+from omegaconf import OmegaConf
 
 # Add ontouch to path to use its utilities
 sys.path.insert(0, '/home/epon04yc/ontouch')
@@ -28,72 +37,70 @@ from depth_patch_renderer_session.visual_patch_utils.gripper_renderer_utils impo
 logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
 
 # ==================== Configuration ====================
-# Paths
-TRAJECTORY_ROOT = "/mnt/dataset_drive/ayad/data/phantom-touch/data/output/handover_collection_0/dataset_temp/e0"
-PHANTOM_DATASET_ROOT = "/mnt/dataset_drive/ayad/data/phantom-touch/data/output/handover_collection_0"
-MUJOCO_SCENE_XML = "/home/epon04yc/phantom-touch/src/phantom-touch/data/banana_scene/phantom_banana_scene.xml"
-ORBBEC_EXTRINSICS = "/home/epon04yc/ontouch/calibration/data/orbbec/robotbase_camera_transform_orbbec_fr4.npy"
 
-# Replace strawberry with banana in the scene
-BANANA_CAD_MODEL = "/mnt/dataset_drive/ayad/phantom-touch/data/cad_models/banana_scaled.obj"
-
-# Rendering settings
-RENDER_W = 240
-RENDER_H = 320
-TRAJ_RATE_HZ = 10.0  # Playback rate
-
-# Debug settings
-ENABLE_VIEWER = True  # Set to True to open MuJoCo viewer for visual debugging
-PLAYBACK_SPEED = 0.5  # Slow down factor (0.5 = half speed, 0.1 = very slow)
-FRAME_DELAY = 0.1  # Additional delay between frames in seconds
-
-# Viewer Controls:
-# - Mouse: Rotate view (left drag), Pan (right drag), Zoom (scroll)
-# - Double-click: Select body
-# - Ctrl+Right-click: Apply force
-# - Space: Pause/Resume
-# - ESC: Close viewer and continue rendering
-# - Backspace: Reset view
-
-# Output
-OUTPUT_DIR_NAME = "mujoco_depth_renders"
-
-
-def load_phantom_object_trajectory(phantom_root, directory="sam2_object_masks"):
+def load_phantom_object_trajectory(phantom_root, episode_num=1, directory="threeD_tracking_offline",
+                                  fitness_threshold=0.0):
     """
-    Load object trajectory from phantom-touch tracking results.
-    Returns: positions (Tx3), orientations (Tx3x3) in robot base frame
+    Load object trajectory from 3D offline tracking NPZ file.
+
+    Args:
+        phantom_root: Root directory containing tracking data
+        episode_num: Episode number to load
+        directory: Subdirectory containing tracking files
+        fitness_threshold: Minimum ICP fitness to include frames (0.0 = all frames)
+
+    Returns:
+        positions_robot: (N,3) positions in robot frame
+        orientations_robot: (N,3,3) orientations in robot frame
+        frame_indices: (N,) original frame indices in episode
     """
-    tracking_dir = os.path.join(phantom_root, directory)  
+    tracking_dir = os.path.join(phantom_root, directory)
+    tracking_file = os.path.join(tracking_dir, f"episode_{episode_num:02d}_tracking.npz")
 
-    positions = np.load(os.path.join(tracking_dir, "absolute_positions.npy"))
-    orientations = np.load(os.path.join(tracking_dir, "absolute_orientations.npy"))
+    if not os.path.exists(tracking_file):
+        raise FileNotFoundError(f"Tracking file not found: {tracking_file}")
 
-    logging.info(f"Loaded object trajectory in camera frame: {len(positions)} frames")
+    # Load tracking data
+    data = np.load(tracking_file, allow_pickle=True)
 
-    positions_robot = []
-    orientations_robot = []
+    logging.info(f"Loaded 3D tracking from: {tracking_file}")
+    logging.info(f"  Episode: {data['episode_number']}")
+    logging.info(f"  Total frames tracked: {data['num_frames_tracked']}/{data['num_frames_total']}")
+    logging.info(f"  Average ICP fitness: {np.mean(data['icp_fitness']):.4f}")
 
-    for pos_robot, ori_robot in zip(positions, orientations):
-        T_robot = np.eye(4)
-        T_robot[:3, :3] = ori_robot
-        T_robot[:3, 3] = pos_robot
+    # Filter by fitness threshold
+    good_mask = data['icp_fitness'] >= fitness_threshold
+    n_good = good_mask.sum()
 
-        positions_robot.append(T_robot[:3, 3])
-        orientations_robot.append(T_robot[:3, :3])
+    if n_good == 0:
+        raise ValueError(f"No frames with fitness >= {fitness_threshold}")
 
-    positions_robot = np.array(positions_robot)
-    orientations_robot = np.array(orientations_robot)
+    if n_good < len(data['icp_fitness']):
+        logging.info(f"  Filtering by fitness >= {fitness_threshold}: {n_good}/{len(data['icp_fitness'])} frames")
 
-    logging.info(f"  Robot frame position sample (frame 0): {positions_robot[0]}")
+    # Extract data (already in robot frame!)
+    positions_robot = data['object_pos_in_robot'][good_mask]       # (N, 3)
+    orientations_robot = data['R_object_in_robot'][good_mask]      # (N, 3, 3)
+    frame_indices = data['frame_idx'][good_mask]                   # (N,)
+
+    logging.info(f"  Loaded {len(positions_robot)} frames in robot frame")
+    logging.info(f"  Position sample (frame {frame_indices[0]}): {positions_robot[0]}")
     logging.info(f"  Position range: X[{positions_robot[:, 0].min():.3f}, {positions_robot[:, 0].max():.3f}], "
                  f"Y[{positions_robot[:, 1].min():.3f}, {positions_robot[:, 1].max():.3f}], "
                  f"Z[{positions_robot[:, 2].min():.3f}, {positions_robot[:, 2].max():.3f}]")
 
-    return positions_robot, orientations_robot
+    # Check for CAD orientation dependency warning
+    if 'cad_model_path' in data:
+        logging.info(f"  CAD model: {data['cad_model_path']}")
+        logging.warning("  NOTE: Orientations depend on CAD file's original orientation!")
+        logging.warning("        Use T_robot_from_cad with centered CAD for accurate visualization")
+
+    data.close()
+
+    return positions_robot, orientations_robot, frame_indices
 
 
-def load_phantom_robot_trajectory(trajectory_root, dataset_name="handover_collection_0_e0.npz"):
+def load_phantom_robot_trajectory(trajectory_root, dataset_name=""):
     """
     Load robot trajectory from phantom-touch dataset (npz file with state key).
     Assumes state is 14-dimensional: first 7 are joint positions, last is gripper action.
@@ -125,7 +132,7 @@ def load_phantom_robot_trajectory(trajectory_root, dataset_name="handover_collec
     return traj, gripper_actions
 
 
-def load_camera_extrinsics(extrinsics_path=ORBBEC_EXTRINSICS):
+def load_camera_extrinsics(extrinsics_path):
     """Load camera to robot base transform."""
     if os.path.exists(extrinsics_path):
         extr = np.load(extrinsics_path)
@@ -243,7 +250,7 @@ def width_to_ctrl(width_series, lo, hi, GRIPPER_MIN_WIDTH_M=0.0, GRIPPER_MAX_WID
                  GRIPPER_MIN_WIDTH_M, GRIPPER_MAX_WIDTH_M, lo, hi)
     return u
 
-def render_depth_patches(phantom_root):
+def render_depth_patches(cfg):
     """Main rendering loop for phantom-touch dataset."""
 
     logging.info("="*60)
@@ -251,14 +258,21 @@ def render_depth_patches(phantom_root):
     logging.info("="*60)
 
     # Load MuJoCo scene
-    logging.info(f"Loading MuJoCo scene: {MUJOCO_SCENE_XML}")
-    model = mj.MjModel.from_xml_path(MUJOCO_SCENE_XML)
+    logging.info(f"Loading MuJoCo scene: {cfg.MUJOCO_SCENE_XML}")
+    model = mj.MjModel.from_xml_path(cfg.MUJOCO_SCENE_XML)
     data = mj.MjData(model)
 
     # Load trajectories
-    logging.info(f"Loading phantom-touch data from: {phantom_root}")
-    obj_positions, obj_orientations = load_phantom_object_trajectory(phantom_root)
-    robot_traj, gripper_actions = load_phantom_robot_trajectory(TRAJECTORY_ROOT)
+    logging.info(f"Loading phantom-touch data from: {cfg.PHANTOM_DATASET_ROOT}")
+    episode_num = cfg.get('EPISODE_NUMBER', 1)
+    fitness_threshold = cfg.get('FITNESS_THRESHOLD', 0.0)
+
+    obj_positions, obj_orientations, frame_indices = load_phantom_object_trajectory(
+        cfg.PHANTOM_DATASET_ROOT,
+        episode_num=episode_num,
+        fitness_threshold=fitness_threshold
+    )
+    robot_traj, gripper_actions = load_phantom_robot_trajectory(cfg.TRAJECTORY_ROOT, cfg.ROBOT_TRAJECTORY_FILE)
 
     # Setup robot
     if robot_traj is not None:
@@ -287,14 +301,14 @@ def render_depth_patches(phantom_root):
         logging.warning("No gripper actuator found")
 
     # Setup object
-    _, qpos_addr = setup_object_in_scene(model, "Banana")
+    _, qpos_addr = setup_object_in_scene(model, "Strawberry")
 
     # Setup renderer
-    out_dir = os.path.join(phantom_root, OUTPUT_DIR_NAME)
+    out_dir = os.path.join(cfg.PHANTOM_DATASET_ROOT, cfg.OUTPUT_DIR_NAME)
     os.makedirs(out_dir, exist_ok=True)
     logging.info(f"Output directory: {out_dir}")
 
-    renderer = mj.Renderer(model, width=RENDER_W, height=RENDER_H)
+    renderer = mj.Renderer(model, width=cfg.RENDER_W, height=cfg.RENDER_H)
     renderer.enable_depth_rendering()
 
     # Find cameras to render
@@ -309,7 +323,8 @@ def render_depth_patches(phantom_root):
 
     # Manifest for tracking what was rendered
     manifest = {
-        'frame_idx': [],
+        'render_idx': [],          # Index in rendering sequence (0, 1, 2, ...)
+        'episode_frame_idx': [],   # Original frame index from episode tracking
         'camera_name': [],
         'rgb_path': [],
         'depth_path': [],
@@ -319,9 +334,9 @@ def render_depth_patches(phantom_root):
 
     # Launch viewer if enabled
     viewer = None
-    if ENABLE_VIEWER:
+    if cfg.ENABLE_VIEWER:
         logging.info("Launching MuJoCo viewer for visual debugging...")
-        logging.info(f"Playback speed: {PLAYBACK_SPEED}x")
+        logging.info(f"Playback speed: {cfg.PLAYBACK_SPEED}x")
         logging.info("Press ESC in viewer to continue without visualization")
         viewer = mujoco.viewer.launch_passive(model, data)
         viewer.sync()
@@ -329,19 +344,23 @@ def render_depth_patches(phantom_root):
     # Main rendering loop
     n_frames = len(obj_positions)
     logging.info(f"Rendering {n_frames} frames...")
+    logging.info(f"Frame indices: {frame_indices[:5]}{'...' if len(frame_indices) > 5 else ''}")
 
     try:
-        for frame_idx in range(n_frames):
-            # Set robot pose
-            if robot_traj is not None and frame_idx < Tq:
-                data.qpos[arm_idx] = robot_traj[frame_idx]
+        for render_idx in range(n_frames):
+            # Get original episode frame index
+            episode_frame_idx = frame_indices[render_idx]
 
-            # Set gripper control
-            if gripper_ctrl is not None and act_id is not None and frame_idx < len(gripper_ctrl):
-                data.ctrl[act_id] = gripper_ctrl[frame_idx]
+            # Set robot pose (use episode frame index if robot trajectory is indexed by episode frames)
+            if robot_traj is not None and episode_frame_idx < Tq:
+                data.qpos[arm_idx] = robot_traj[episode_frame_idx]
 
-            # Set object pose
-            set_object_pose(data, qpos_addr, obj_positions[frame_idx], obj_orientations[frame_idx])
+            # Set gripper control (use episode frame index)
+            if gripper_ctrl is not None and act_id is not None and episode_frame_idx < len(gripper_ctrl):
+                data.ctrl[act_id] = gripper_ctrl[episode_frame_idx]
+
+            # Set object pose (use render index to access filtered trajectory)
+            set_object_pose(data, qpos_addr, obj_positions[render_idx], obj_orientations[render_idx])
 
             # Update simulation
             data.qvel[:] = 0.0
@@ -355,7 +374,7 @@ def render_depth_patches(phantom_root):
             if viewer is not None and viewer.is_running():
                 viewer.sync()
                 # Slow down playback
-                time.sleep(FRAME_DELAY / PLAYBACK_SPEED)
+                time.sleep(cfg.FRAME_DELAY / cfg.PLAYBACK_SPEED)
 
             # Render each camera
             for cam_id, cam_name in cam_info:
@@ -365,7 +384,7 @@ def render_depth_patches(phantom_root):
                 # turn off depth rendering for RGB
                 renderer.disable_depth_rendering()
                 rgb = renderer.render()
-                rgb_filename = f"frame_{frame_idx:04d}_{cam_name}_rgb.png"
+                rgb_filename = f"ep{episode_num:02d}_frame_{episode_frame_idx:04d}_{cam_name}_rgb.png"
                 rgb_path = os.path.join(out_dir, rgb_filename)
                 iio.imwrite(rgb_path, rgb)
 
@@ -373,20 +392,21 @@ def render_depth_patches(phantom_root):
                 renderer.enable_depth_rendering()
                 depth_m = renderer.render()  # depth in meters
                 depth_mm = np.clip(depth_m * 1000.0, 0, 65535).astype(np.uint16)
-                depth_filename = f"frame_{frame_idx:04d}_{cam_name}_depth.png"
+                depth_filename = f"ep{episode_num:02d}_frame_{episode_frame_idx:04d}_{cam_name}_depth.png"
                 depth_path = os.path.join(out_dir, depth_filename)
                 iio.imwrite(depth_path, depth_mm)
 
                 # Add to manifest
-                manifest['frame_idx'].append(frame_idx)
+                manifest['render_idx'].append(render_idx)
+                manifest['episode_frame_idx'].append(episode_frame_idx)
                 manifest['camera_name'].append(cam_name)
                 manifest['rgb_path'].append(rgb_filename)
                 manifest['depth_path'].append(depth_filename)
-                manifest['object_position'].append(obj_positions[frame_idx])
-                manifest['object_orientation'].append(obj_orientations[frame_idx])
+                manifest['object_position'].append(obj_positions[render_idx])
+                manifest['object_orientation'].append(obj_orientations[render_idx])
 
-            if frame_idx % 10 == 0:
-                logging.info(f"  Rendered {frame_idx}/{n_frames} frames...")
+            if render_idx % 10 == 0:
+                logging.info(f"  Rendered {render_idx}/{n_frames} frames (episode frame {episode_frame_idx})...")
 
     finally:
         # Close viewer if it was opened
@@ -396,15 +416,19 @@ def render_depth_patches(phantom_root):
 
     # Save manifest
     manifest_arrays = {
-        'frame_idx': np.array(manifest['frame_idx']),
+        'render_idx': np.array(manifest['render_idx']),
+        'episode_frame_idx': np.array(manifest['episode_frame_idx']),
         'camera_name': np.array(manifest['camera_name']),
         'rgb_path': np.array(manifest['rgb_path']),
         'depth_path': np.array(manifest['depth_path']),
         'object_position': np.array(manifest['object_position']),
         'object_orientation': np.array(manifest['object_orientation']),
+        # Metadata
+        'episode_number': episode_num,
+        'fitness_threshold': fitness_threshold,
     }
 
-    manifest_path = os.path.join(out_dir, "render_manifest.npz")
+    manifest_path = os.path.join(out_dir, f"render_manifest_ep{episode_num:02d}.npz")
     np.savez(manifest_path, **manifest_arrays)
     logging.info(f"Saved manifest: {manifest_path}")
 
@@ -418,17 +442,9 @@ def render_depth_patches(phantom_root):
 
 def main():
     """Entry point."""
-    phantom_root = PHANTOM_DATASET_ROOT
+    contact_depth_patches_cfg = OmegaConf.load("cfg/contact_depth_patches.yaml")
 
-    if not os.path.exists(phantom_root):
-        logging.error(f"Phantom dataset root not found: {phantom_root}")
-        return
-
-    if not os.path.exists(MUJOCO_SCENE_XML):
-        logging.error(f"MuJoCo scene file not found: {MUJOCO_SCENE_XML}")
-        return
-
-    render_depth_patches(phantom_root)
+    render_depth_patches(contact_depth_patches_cfg)
 
 
 if __name__ == "__main__":

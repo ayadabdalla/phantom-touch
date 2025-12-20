@@ -21,3 +21,15 @@ def load_raw_depth_images(base_dir, shape):
         depth_image = raw.reshape(shape)
         depth_images.append(depth_image)
     return np.stack(depth_images, axis=0)
+
+def load_raw_depth_episode(base_dir, episode_num, shape):
+    depth_paths = glob.glob(os.path.join(base_dir, f"e{episode_num}", "RawDepth_*.raw"))
+    depth_paths = sorted(depth_paths, key=natural_key)  # <--- natural sort
+    depth_images = []
+    for path in tqdm(depth_paths, desc=f"reading depth images for episode {episode_num}"):
+        with open(path, "rb") as f:
+            raw = np.fromfile(f, dtype=np.uint16)
+            raw = raw[:shape[0]*shape[1]]
+        depth_image = raw.reshape(shape)
+        depth_images.append(depth_image)
+    return np.stack(depth_images, axis=0)

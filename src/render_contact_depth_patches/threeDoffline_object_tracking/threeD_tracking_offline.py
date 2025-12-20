@@ -1,514 +1,657 @@
-# standard libraries
+"""3D Object Tracking Offline Pipeline
+
+This module performs offline 3D object tracking by:
+1. Loading RGB and depth data from episodes
+2. Segmenting objects using SAM2 (optional)
+3. Converting depth to point clouds
+4. Aligning CAD models to observations using ICP
+5. Tracking object pose over time
+
+REFERENCE FRAME DOCUMENTATION
+==============================
+
+This pipeline tracks transformations through multiple coordinate frames.
+Understanding these frames is CRITICAL for using the output data correctly.
+
+COORDINATE FRAMES:
+------------------
+
+1. CAMERA FRAME
+   - Origin: Camera optical center
+   - Axes: Standard camera convention (x right, y down, z forward)
+   - Source: Depth sensor intrinsics (orbbec_fx, orbbec_fy, orbbec_cx, orbbec_cy)
+   - When: depth_to_point_cloud() converts depth pixels → 3D points
+
+2. ROBOT FRAME
+   - Origin: Robot base
+   - Axes: Robot's world coordinate system
+   - Transform: T_robot_from_camera (loaded from CAMERA_TO_ROBOT_TRANSFORM_PATH)
+   - When: Final output transforms are all in this frame
+
+3. CAD MODEL FRAME
+   - Origin: Original CAD file's coordinate system
+   - When: CAD mesh is first loaded from file
+
+4. CENTERED CAD FRAME
+   - Origin: CAD model centroid moved to (0,0,0)
+   - When: load_cad_model() centers and scales the model
+   - Purpose: ICP alignment (both CAD and observations centered)
+
+PROCESSING PIPELINE:
+--------------------
+
+Step 1: Depth → Camera Frame
+    depth_to_point_cloud(depth_image, mask)
+    → point cloud in CAMERA FRAME
+    → centroid in CAMERA FRAME
+
+Step 2: ICP Alignment (in camera frame)
+    - Center observation at origin (matches centered CAD)
+    - ICP: centered CAD → centered observation
+    - Result: R_icp (rotation in centered space)
+    - Build: T_camera_from_cad = [R_icp | centroid_camera]
+
+Step 3: Transform to Robot Frame
+    - T_robot_from_cad = T_robot_from_camera @ T_camera_from_cad
+    - Extract position and rotation in robot frame
+    - This is the FINAL OUTPUT frame
+
+OUTPUT DATA KEYS (in saved NPZ files):
+--------------------------------------
+
+TRANSFORMS:
+  T_robot_from_cad (N,4,4)
+    → Transforms centered CAD model to robot frame per frame
+    → Use this to visualize CAD model at tracked poses
+
+POSITIONS:
+  object_pos_in_camera (N,3)
+    → Object centroid in camera frame (intermediate)
+  object_pos_in_robot (N,3)
+    → Object centroid in robot frame (MAIN OUTPUT)
+
+ROTATIONS:
+  R_icp_in_centered_space (N,3,3)
+    → ICP output: rotation matrix in camera frame axes
+    → Rotates centered CAD to match centered observation
+  R_object_in_robot (N,3,3)
+    → Same rotation but expressed in robot frame axes
+    → WARNING: Depends on CAD file's original orientation
+
+TRAJECTORY:
+  displacement_from_start (N,3)
+    → Displacement from first tracked position (robot frame)
+
+IMPORTANT NOTES:
+----------------
+- Each frame is processed INDEPENDENTLY (no temporal tracking)
+- ICP always initializes from identity (init=eye(4))
+- Bad fitness scores do NOT propagate to next frames
+- All final outputs are in ROBOT FRAME for easy use
+
+CAD ORIENTATION DEPENDENCY:
+---------------------------
+CRITICAL: Rotation outputs depend on the CAD model's orientation in its file!
+
+Background:
+  The CAD model is centered at origin but KEEPS its original orientation from
+  the file. ICP finds the rotation needed to align this CAD to the observation.
+  Different CAD file orientation → Different rotation matrices in output.
+
+What is CAD-orientation-INDEPENDENT:
+  ✓ object_pos_in_robot        - Centroid position (no rotation involved)
+  ✓ displacement_from_start     - Position changes over time
+  ✓ T_robot_from_cad            - WHEN APPLIED to your centered CAD model
+
+What DEPENDS on CAD file orientation:
+  ⚠ R_icp_in_centered_space     - Aligns CAD-as-loaded to observation (camera frame)
+  ⚠ R_object_in_robot           - Same rotation expressed in robot frame
+
+Why T_robot_from_cad IS independent (when applied):
+  Although rotation matrix values differ for different CAD orientations, when
+  you apply the full transform to your centered CAD model, you ALWAYS get the
+  correct observed pose. The rotation compensates for CAD's initial orientation.
+
+  Example:
+    CAD_A (upright in file):   T_A @ CAD_A = Correct observed pose
+    CAD_B (rotated in file):   T_B @ CAD_B = Same observed pose!
+
+How to use the rotation data:
+  1. For visualization:
+     Apply T_robot_from_cad to your centered CAD model (always correct)
+
+  2. For rotation analysis (independent of CAD initial orientation):
+     Compute relative rotations between frames (robot frame):
+       R_relative[i] = R_object_in_robot[i] @ R_object_in_robot[0].T
+     This gives rotation from frame 0 to frame i in robot frame.
+     The CAD's initial orientation cancels out in this product.
+"""
+
 import cv2
 import numpy as np
 import os
 import torch
 import matplotlib
-import datetime
-from omegaconf import OmegaConf
+matplotlib.use("TKAgg")
 import matplotlib.pyplot as plt
 import open3d as o3d
 import trimesh
-# models
+from omegaconf import OmegaConf
+
 from sam2.build_sam import build_sam2_video_predictor
-# repo libraries
-from utils.rgb_utils import load_rgb_images
-from utils.sam2utils import (
-    search_folder,
-)
-from phantom_touch.preprocessors.split_episodes import Preprocessor
-#### Script metadata ####
-matplotlib.use("TKAgg")
-now = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+from utils.sam2utils import search_folder
+from utils.depth_utils import load_raw_depth_episode
+from utils.hw_camera import orbbec_fx, orbbec_fy, orbbec_cx, orbbec_cy
+
 device = "cuda" if torch.cuda.is_available() else "cpu"
-from utils.depth_utils import load_raw_depth_images
-
-def onclick(event):
-    if event.xdata is not None and event.ydata is not None:
-        centroid_coords.append([event.xdata, event.ydata])
-        print(f"Selected centroid: ({event.xdata:.1f}, {event.ydata:.1f})")
-        plt.close()  # Close the figure after one click
-
-def depth_to_point_cloud(depth_image, mask, fx, fy, cx, cy):
-    """
-    Convert depth image to point cloud using camera intrinsics.
-    Only include points where mask is non-zero.
-    Returns point cloud and centroid.
-    """
-
-    breakpoint()
-    h_, w_ = depth_image.shape
-    points = []
-
-    # Create meshgrid for image coordinates
-    v, u_ = np.meshgrid(np.arange(h_), np.arange(w_), indexing='ij')
-
-    # Apply mask
-    valid_mask = mask[:, :, 0] > 0  # Use first channel of RGB mask
-
-    # Get valid depth values
-    valid_depth = depth_image[valid_mask]
-    valid_u = u_[valid_mask] # the x in image coordinates
-    valid_v = v[valid_mask] # the y in image coordinates
-
-    # Convert to 3D points
-    z = valid_depth.astype(np.float32) / 1000.0  # Convert to meters
-    x = (valid_u - cx) * z / fx
-    y = (valid_v - cy) * z / fy
-
-    points = np.stack([x, y, z], axis=-1)
-
-    # Calculate centroid
-    centroid = np.mean(points, axis=0)
-
-    # Create Open3D point cloud
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(points)
-
-    return pcd, centroid
-
-if __name__ == "__main__":
-    # meta paths
-    OmegaConf.register_new_resolver("phantom-touch", lambda: search_folder("/home", "phantom-touch"))
-    parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    repo_dir = search_folder("/home", "phantom-touch")
-
-    #### Config loading ####
-    threed_cfg = OmegaConf.load(f"{current_dir}/cfg/threeD_tracking_offline.yaml")
-    paths_cfg = OmegaConf.load(f"{repo_dir}/cfg/paths.yaml")
-    object_mask_output_dir = paths_cfg.object_masks_dir
-    sam2video_cfg= threed_cfg.sam2videoPredictor
-    data_dir = paths_cfg.dataset_directory
-    dataset_name = paths_cfg.metadata.experiment_name
-    dataset_format = paths_cfg.metadata.dataset_format
-    depth_data_dir = paths_cfg.recordings_directory
-    depth_shape = tuple(threed_cfg.depth_shape)
-    threeD_tracking_output_dir = paths_cfg.threeD_tracking_output_dir
-    preprocess_cfg=OmegaConf.load(f"{repo_dir}/src/phantom_touch/cfg/preprocessors.yaml")
 
 
+class ObjectTracker:
+    """Handles 3D object tracking with ICP and point cloud processing."""
+    
+    def __init__(self, config):
+        self.cfg = config
+        self.centroid_coords = []
+        self.camera_intrinsics = {
+            'fx': orbbec_fx, 'fy': orbbec_fy,
+            'cx': orbbec_cx, 'cy': orbbec_cy
+        }
+        self.camera_to_robot_transform = np.load(
+            config.CAMERA_TO_ROBOT_TRANSFORM_PATH, allow_pickle=True
+        )
+        
+    def get_centroid_from_user(self, image):
+        """Display image and get user click for centroid selection."""
+        fig, ax = plt.subplots()
+        ax.imshow(image)
+        plt.title("Click to select centroid")
+        
+        def onclick(event):
+            if event.xdata is not None and event.ydata is not None:
+                self.centroid_coords.append([event.xdata, event.ydata])
+                print(f"Selected centroid: ({event.xdata:.1f}, {event.ydata:.1f})")
+                plt.close()
+        
+        fig.canvas.mpl_connect('button_press_event', onclick)
+        plt.show()
+        
+        if not self.centroid_coords:
+            raise ValueError("No centroid was selected.")
+        return np.array(self.centroid_coords[0], dtype=np.float32)
+    
+    def depth_to_point_cloud(self, depth_image, mask):
+        """Convert depth image to point cloud using camera intrinsics."""
+        h, w = depth_image.shape
+        v, u = np.meshgrid(np.arange(h), np.arange(w), indexing='ij')
+        
+        valid_mask = mask[:, :, 0] > 0
+        valid_depth = depth_image[valid_mask]
+        valid_u = u[valid_mask]
+        valid_v = v[valid_mask]
+        
+        z = valid_depth.astype(np.float32) / 1000.0  # Convert to meters
+        x = (valid_u - self.camera_intrinsics['cx']) * z / self.camera_intrinsics['fx']
+        y = (valid_v - self.camera_intrinsics['cy']) * z / self.camera_intrinsics['fy']
+        
+        points = np.stack([x, y, z], axis=-1)
+        centroid = np.mean(points, axis=0)
+        
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        
+        return pcd, centroid
+    
+    def transform_to_robot_frame(self, pcd, centroid):
+        """Transform point cloud and centroid to robot frame."""
+        pcd_robot = o3d.geometry.PointCloud(pcd)
+        pcd_robot.transform(self.camera_to_robot_transform)
+        
+        centroid_homogeneous = np.append(centroid, 1)
+        centroid_robot = (self.camera_to_robot_transform @ centroid_homogeneous)[:3]
+        
+        return pcd_robot, centroid_robot
+    
+    def generate_masks_with_sam2(self, images, temp_dir, predictor_cfg):
+        """Generate object masks using SAM2."""
+        os.makedirs(temp_dir, exist_ok=True)
+        
+        # Save temporary images
+        for idx, img in enumerate(images):
+            cv2.imwrite(os.path.join(temp_dir, f"frame_{idx:04d}.png"), img)
+        
+        # Get centroid from user
+        centroid = self.get_centroid_from_user(images[0])
+        
+        # Run SAM2
+        predictor = build_sam2_video_predictor(
+            predictor_cfg.model_cfg, predictor_cfg.sam2_checkpoint, device=device
+        )
+        inference_state = predictor.init_state(video_path=temp_dir)
+        predictor.reset_state(inference_state)
+        
+        points = np.array([[centroid[0], centroid[1]]], dtype=np.float32)
+        predictor.add_new_points_or_box(
+            inference_state=inference_state,
+            frame_idx=0,
+            obj_id=1,
+            points=points,
+            labels=np.array([1], np.int32)
+        )
+        
+        masks = []
+        for _, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
+            for i, _ in enumerate(out_obj_ids):
+                mask = (out_mask_logits[i] > 0.0).cpu().numpy()[0]
+                mask = cv2.cvtColor(mask.astype(np.uint8) * 255, cv2.COLOR_GRAY2RGB)
+                masks.append(mask)
+        
+        return np.array(masks)
+    
+    def load_masks(self, mask_dir):
+        """Load pre-existing masks from directory."""
+        mask_paths = sorted(
+            [os.path.join(mask_dir, f) for f in os.listdir(mask_dir) 
+             if f.startswith("mask_") and f.endswith(".png")],
+            key=lambda p: os.path.splitext(os.path.basename(p))[0]
+        )
+        masks = [cv2.imread(path) for path in mask_paths]
+        return np.array(masks)
+    
+    def visualize_alignment(self, rgb_image, depth_image, mask, depth_width, depth_height):
+        """Visualize mask-depth alignment for verification."""
+        rgb_resized = cv2.resize(rgb_image, (depth_width, depth_height), 
+                                interpolation=cv2.INTER_NEAREST)
+        depth_normalized = cv2.normalize(depth_image, None, 0, 255, 
+                                        cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+        depth_colored = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_JET)
+        
+        rgb_overlay = cv2.addWeighted(rgb_resized, 0.6, mask, 0.4, 0)
+        rgbd = cv2.addWeighted(rgb_resized, 0.6, depth_colored, 0.4, 0)
+        depth_overlay = cv2.addWeighted(depth_colored, 0.6, mask, 0.4, 0)
+        
+        comparison = np.hstack([rgb_overlay, rgbd, depth_overlay])
+        cv2.imshow('RGB+Mask | RGB+Depth | Depth+Mask', comparison)
+        print("Press any key to continue...")
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+    
+    def process_point_clouds(self, depth_images, masks, rgb_images=None):
+        """
+        Convert depth images and masks to point clouds in CAMERA FRAME.
 
-    episodes = [
-        f"{data_dir}/e{i}/{dataset_name}_e{i}.{dataset_format}"
-        for i in range(threed_cfg.start_episode, threed_cfg.end_episode + 1)
-    ]
-    all_depth_data = load_raw_depth_images(depth_data_dir, depth_shape)
-    all_rgb_data, all_rgb_paths = load_rgb_images(depth_data_dir, return_path=True)
-    for i,episode in enumerate(episodes): # loop over episodes
-        try:
-            episode_data = np.load(episode)
-        except FileNotFoundError:
-            print(f"File not found: {episode}")
-            continue
-        print(f"Loaded {episode} with {len(episode_data['image_0'])} frames")
-        # print episodes with less than 10 frames
-        if len(episode_data["image_0"]) < 10:
-            print(f"Episode {episode} has less than 10 frames")
+        Keeps point clouds in camera frame for ICP alignment.
+        Final transformation to robot frame happens in align_with_icp().
+        """
+        depth_height, depth_width = depth_images[0].shape
+        point_clouds, centroids = [], []
 
-        # load all episode_images and depth episode_images from  the recordings instead
-        data_preprocessor = Preprocessor(preprocess_cfg,paths_cfg=paths_cfg)
-        episodes_meta_info = data_preprocessor.read_episodes()
+        for i, (depth_img, mask) in enumerate(zip(depth_images, masks)):
+            mask_resized = cv2.resize(mask, (depth_width, depth_height),
+                                     interpolation=cv2.INTER_NEAREST)
 
-        episode_images = episode_data["image_0"]
-        # Create a temporary directory to store episode_images
-        temp_dir = "temporary_images_extraction"
-        temporary_images_path = os.path.join(data_dir, temp_dir)
-        if threed_cfg.mask_objects:
-            # # Save episode_images to the temporary directory
-            if not os.path.exists(temporary_images_path) or len(os.listdir(temporary_images_path)) != len(episode_images):
-                os.makedirs(temporary_images_path, exist_ok=True)
-                for idx, img in enumerate(episode_images):
-                    cv2.imwrite(os.path.join(data_dir,temp_dir, f"frame_{idx:04d}.png"), img)
+            if i == 0 and rgb_images is not None:
+                self.visualize_alignment(rgb_images[i], depth_img, mask_resized,
+                                       depth_width, depth_height)
 
-            # Show the first image and get a click
-            fig, ax = plt.subplots()
-            ax.imshow(episode_images[0])  # Show first image
+            # Keep in CAMERA FRAME (don't transform to robot yet)
+            pcd_camera, centroid_camera = self.depth_to_point_cloud(depth_img, mask_resized)
 
-            # image_idx = episodes_meta_info[f"e{i}"][episode_data["indexes"][0]]   # the indexes key in the episode_data gives information about the remaining indexes relative to one episode after filtering
+            point_clouds.append(pcd_camera)
+            centroids.append(centroid_camera)
 
-            # look for the image_idx in the paths names
-            # for path in all_rgb_paths:
-            #     if f"{image_idx:04d}.png" in path:
-            #         original_image_path = path
-            #         break
-            # original_img = cv2.imread(original_image_path)
-            # cv2.imshow("First Frame", original_img)
-            # cv2.waitKey(0)
-            plt.title("Click to select centroid")
-            centroid_coords = []
+            if i % 10 == 0:
+                print(f"Processed point cloud {i}/{len(depth_images)}")
 
-            cid = fig.canvas.mpl_connect('button_press_event', onclick)
-            plt.show()
-
-            # Convert to numpy array if a point was selected
-            if centroid_coords:
-                centroids = np.array(centroid_coords)
-            else:
-                raise ValueError("No centroid was selected.")
-
-            #### Second workflow component: VIDEO-SAM2 ####
-            print("Running VIDEO-SAM2...")
-            points = np.array([[centroids[0][0], centroids[0][1]]], dtype=np.float32)
-            predictor = build_sam2_video_predictor(sam2video_cfg.model_cfg, sam2video_cfg.sam2_checkpoint, device=device)
-            inference_state = predictor.init_state(video_path=temporary_images_path)
-            predictor.reset_state(inference_state)
-
-            _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
-                inference_state=inference_state,
-                frame_idx=0,
-                obj_id=1,
-                points=points,
-                labels=np.array([1], np.int32)
-            )
-
-            mask_frames = []
-            for _, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
-                for i, _ in enumerate(out_obj_ids):
-                    mask = (out_mask_logits[i] > 0.0).cpu().numpy()[0]
-                    mask = cv2.cvtColor(mask.astype(np.uint8) * 255, cv2.COLOR_GRAY2RGB)
-                    mask_frames.append(mask)
-            mask_frames = np.array(mask_frames)
-
-            #### Store results ####
-            print("Saving masks...")
-            frame_names = sorted(
-                [os.path.join(temporary_images_path, f) for f in os.listdir(temporary_images_path) if f.endswith(".png")],
-                key=lambda p: os.path.splitext(os.path.basename(p))[0]
-            )
-            print(f"Number of frames: {len(frame_names)}")
-
-
-            os.makedirs(object_mask_output_dir, exist_ok=True)
-            for i, frame_path in enumerate(frame_names):
-                frame_name = os.path.join(object_mask_output_dir, f"mask_{os.path.basename(frame_path)}")
-                print(f"Saving {frame_name}")
-                cv2.imwrite(frame_name, mask_frames[i])
-
-        # the indexes key in the episode_data gives information about the remaining indexes relative to one episode after filtering
-        episode_depth_data = all_depth_data[episode_data["indexes"].astype(int)]
-        print(f"Loaded {len(episode_depth_data)} depth episode_images from {depth_data_dir}")
-
-        # Optional: Load pre-existing masks instead of generating with SAM2
-        # Set LOAD_EXISTING_MASKS to True to load from output_dir
-        LOAD_EXISTING_MASKS = threed_cfg.load_masks
-
-        if LOAD_EXISTING_MASKS:
-            print(f"Loading existing masks from {object_mask_output_dir}...")
-            mask_paths = sorted(
-                [os.path.join(object_mask_output_dir, f) for f in os.listdir(object_mask_output_dir) if f.startswith("mask_") and f.endswith(".png")],
-                key=lambda p: os.path.splitext(os.path.basename(p))[0]
-            )
-            mask_frames = []
-            for mask_path in mask_paths:
-                mask = cv2.imread(mask_path)
-                mask_frames.append(mask)
-            mask_frames = np.array(mask_frames)
-            print(f"Loaded {len(mask_frames)} masks with shape {mask_frames[0].shape}")
-
-        # Camera intrinsic parameters - Orbbec Femto Bolt
-        # (imported from utils.hw_camera)
-        from utils.hw_camera import orbbec_fx, orbbec_fy, orbbec_cx, orbbec_cy
-
-        # ============ Camera to Robot Transformation ============
-        # Load the camera-to-robot transformation (camera frame -> robot base frame)
-        CAMERA_TO_ROBOT_TRANSFORM_PATH = threed_cfg.CAMERA_TO_ROBOT_TRANSFORM_PATH
-        camera_to_robot_transform = np.load(CAMERA_TO_ROBOT_TRANSFORM_PATH, allow_pickle=True)
-        print(f"Loaded camera-to-robot transformation from {CAMERA_TO_ROBOT_TRANSFORM_PATH}")
-        print(f"Camera to robot transform:\n{camera_to_robot_transform}")
-
-        # Convert depth episode_images and masks to point clouds
-
-        # ============ CAD Model Configuration ============
-        # Path to the CAD model (mesh file: .obj, .stl, .ply, etc.)
-        CAD_MODEL_PATH = threed_cfg.CAD_MODEL_PATH  # UPDATE THIS PATH
-
-        # Initial pose of the CAD model in robot base frame
-        # Position (x, y, z) in meters
-        INITIAL_POSITION = np.array([0.0, 0.0, 0.0])  # UPDATE THIS
-
-        # Initial orientation as rotation matrix or use identity
-        # You can also specify as quaternion or euler angles and convert
-        INITIAL_ORIENTATION = np.eye(3)  # UPDATE THIS if needed
-
-        # Number of points to sample from CAD model
-        CAD_SAMPLE_POINTS = 10000
-
-        # Generate point clouds for each frame
-        point_clouds = []
-        centroids = []
-        print("Converting depth episode_images and masks to point clouds...")
-        print(f"Depth shape: {episode_depth_data[0].shape}, Mask shape: {mask_frames[0].shape}")
-
-        # Get depth resolution
-        depth_height, depth_width = episode_depth_data[0].shape
-        mask_height, mask_width = mask_frames[0].shape[:2]
-
-        print(f"Resizing masks from {mask_width}x{mask_height} to {depth_width}x{depth_height}")
-
-        for i in range(min(len(episode_depth_data), len(mask_frames))):
-            # Resize mask to match depth image resolution
-            mask_resized = cv2.resize(mask_frames[i], (depth_width, depth_height), interpolation=cv2.INTER_NEAREST)
-
-            # Visualize the first frame to verify mask alignment
-            # if i == 0:
-            #     # Normalize depth for visualization
-            #     depth_normalized = cv2.normalize(episode_depth_data[i], None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-            #     depth_colored = cv2.applyColorMap(depth_normalized, cv2.COLORMAP_JET)
-
-            #     # Create overlay: blend depth image with mask
-            #     mask_overlay = mask_resized.copy()
-            #     overlay = cv2.addWeighted(depth_colored, 0.6, mask_overlay, 0.4, 0)
-
-            #     # Display side by side
-            #     comparison = np.hstack([depth_colored, mask_overlay, overlay])
-
-            #     # Show the visualization
-            #     cv2.imshow('Depth | Mask | Overlay', comparison)
-            #     print("Press any key to continue...")
-            #     cv2.waitKey(0)
-            #     cv2.destroyAllWindows()
-            #TODO:: stopped here
-            pcd, centroid = depth_to_point_cloud(episode_depth_data[i], mask_resized, orbbec_fx, orbbec_fy, orbbec_cx, orbbec_cy)
-
-            # Transform point cloud from camera frame to robot base frame
-            pcd_robot_frame = o3d.geometry.PointCloud(pcd)
-            pcd_robot_frame.transform(camera_to_robot_transform)
-
-            # Transform centroid to robot frame
-            centroid_homogeneous = np.append(centroid, 1)  # Convert to homogeneous coordinates
-            centroid_robot_frame = (camera_to_robot_transform @ centroid_homogeneous)[:3]
-
-            point_clouds.append(pcd_robot_frame)
-            centroids.append(centroid_robot_frame)
-            print(f"Generated point cloud {i} with {len(pcd_robot_frame.points)} points")
-            print(f"  Centroid (camera frame): {centroid}")
-            print(f"  Centroid (robot frame): {centroid_robot_frame}")
-
-        # ============ Load CAD Model ============
-        print(f"\nLoading CAD model from {CAD_MODEL_PATH}...")
-        cad_mesh = trimesh.load(CAD_MODEL_PATH)
-        print(f"CAD mesh loaded with {len(cad_mesh.vertices)} vertices")
-
-        # Sample points from the CAD model surface
-        cad_points = cad_mesh.sample(CAD_SAMPLE_POINTS)
-        print(f"Sampled {len(cad_points)} points from CAD model")
-
-        # Create Open3D point cloud from CAD model
+        return point_clouds, centroids
+    
+    def load_cad_model(self, cad_path, num_samples, scale=0.001):
+        """Load and prepare CAD model."""
+        cad_mesh = trimesh.load(cad_path)
+        cad_points = cad_mesh.sample(num_samples)
+        
         cad_pcd = o3d.geometry.PointCloud()
         cad_pcd.points = o3d.utility.Vector3dVector(cad_points)
+        
+        # Apply initial pose and centering
+        cad_centroid = np.mean(np.asarray(cad_pcd.points), axis=0)
+        cad_pcd.translate(-cad_centroid)
+        cad_pcd.scale(scale, center=(0, 0, 0))
+        
+        return cad_pcd, cad_mesh
+    
+    def align_with_icp(self, point_clouds, centroids, cad_pcd, voxel_size=0.005):
+        """
+        Align CAD model to observations using ICP.
 
-        # Apply initial pose (position and orientation in robot base frame)
-        cad_pcd_initial = o3d.geometry.PointCloud(cad_pcd)
-        cad_pcd_initial.rotate(INITIAL_ORIENTATION, center=(0, 0, 0))
-        cad_pcd_initial.translate(INITIAL_POSITION)
+        REFERENCE FRAME TRACKING:
+        =========================
+        Input:
+          - point_clouds: In CAMERA FRAME
+          - centroids: In CAMERA FRAME
+          - cad_pcd: Centered at origin in its own frame
 
-        # Calculate centroid of the CAD model at initial pose
-        cad_centroid_initial = np.mean(np.asarray(cad_pcd_initial.points), axis=0)
-        print(f"CAD model initial centroid: {cad_centroid_initial}")
+        Processing:
+          - ICP performed in CAMERA FRAME (both centered at origin)
+          - Each frame processed INDEPENDENTLY (no temporal tracking)
 
-        # Center the CAD model for ICP (rotation-only alignment)
-        cad_pcd_centered = o3d.geometry.PointCloud(cad_pcd_initial)
-        cad_pcd_centered.translate(-cad_centroid_initial)
-        # convert to meters
-        cad_pcd_centered.scale(0.001, center=(0, 0, 0))
+        Output:
+          - All transforms and positions in ROBOT FRAME
+          - Clear naming distinguishes camera vs robot frame data
 
-        # Apply ICP between observation point clouds and CAD model reference
-        # ICP optimizes only for rotation, translation comes from centroid tracking
-        if len(point_clouds) > 0:
+        Args:
+            point_clouds: List of point clouds in CAMERA FRAME
+            centroids: List of centroids (3D) in CAMERA FRAME
+            cad_pcd: CAD point cloud centered at origin
+            voxel_size: Voxel size for downsampling
 
-            # Downsample CAD model reference for faster processing
-            voxel_size = 0.005
-            cad_pcd_down = cad_pcd_centered.voxel_down_sample(voxel_size)
-            cad_pcd_down.estimate_normals(
+        Returns:
+            Dictionary with:
+              - Transforms in ROBOT FRAME
+              - ICP rotations in CENTERED/CAMERA FRAME
+              - Positions in both CAMERA and ROBOT FRAME
+        """
+        # Store CAD centroid (should be near zero since centered)
+        cad_centroid_in_cad_frame = np.mean(np.asarray(cad_pcd.points), axis=0)
+
+        # Downsample CAD for ICP
+        cad_down = cad_pcd.voxel_down_sample(voxel_size)
+        cad_down.estimate_normals(
+            search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.02, max_nn=30)
+        )
+
+        results = {
+            # --- Transforms in ROBOT FRAME (final output) ---
+            'T_robot_from_cad': [],         # (N, 4, 4) Transform: centered CAD → robot frame
+
+            # --- Positions ---
+            'object_pos_in_camera': [],     # (N, 3) Object centroid in camera frame
+            'object_pos_in_robot': [],      # (N, 3) Object centroid in robot frame
+
+            # --- Rotations ---
+            'R_icp_in_centered_space': [],  # (N, 3, 3) ICP rotation: centered CAD → centered obs
+            'R_object_in_robot': [],        # (N, 3, 3) Object orientation in robot frame
+
+            # --- Trajectory (in robot frame) ---
+            'displacement_from_start': [],  # (N, 3) Translation from first tracked position
+
+            # --- Quality metrics ---
+            'icp_fitness': [],              # (N,) ICP fitness score per frame
+            'frame_idx': [],                # (N,) Frame index in episode
+        }
+
+        # Track first position in robot frame for trajectory
+        first_pos_robot = None
+
+        print(f"\nApplying ICP alignment (camera frame → robot frame output)")
+
+        for i, (pcd_camera, centroid_camera) in enumerate(zip(point_clouds, centroids)):
+            # ===== STEP 1: ICP in centered space (camera frame) =====
+            # Center observation at origin (same as CAD)
+            pcd_centered = o3d.geometry.PointCloud(pcd_camera)
+            pcd_centered.translate(-pcd_centered.get_center())
+
+            # Downsample for ICP
+            pcd_down = pcd_centered.voxel_down_sample(voxel_size)
+            pcd_down.estimate_normals(
                 search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.02, max_nn=30)
             )
 
-            print(f"\nCAD reference point cloud has {len(cad_pcd_down.points)} points after downsampling")
-
-            # Store transformation matrices (full 4x4 including translation from centroid)
-            # These transforms bring the CAD model from initial pose to observation pose (in robot frame)
-            transformations = []
-            rotations = []
-            translations = []
-            positions = []  # Absolute positions (centroids) in robot base frame
-            orientations = []  # Absolute orientations (rotation matrices) in robot base frame
-            fitness_scores = []  # Track fitness for filtering
-            frame_indices = []  # Track which frames were kept
-
-            # Fitness threshold for filtering
-            FITNESS_THRESHOLD = 0.5  # Adjust this value based on your episode_data quality needs
-
-            print("\nApplying ICP alignment (rotation only) + centroid tracking (translation)...")
-            print("All point clouds are now in robot base frame...")
-            print("Transforming CAD model from initial pose to observation poses...")
-            print(f"Filtering frames with fitness < {FITNESS_THRESHOLD}")
-
-            for i, (pcd, centroid) in enumerate(zip(point_clouds, centroids)):
-
-                pcd_centered = o3d.geometry.PointCloud(pcd)
-                pcd_centered.translate(pcd_centered.get_center() * -1)
-                # get information about the min, max and mean of the two point clouds
-                x_min, y_min, z_min = np.min(np.asarray(pcd_centered.points), axis=0)
-                x_max, y_max, z_max = np.max(np.asarray(pcd_centered.points), axis=0)
-                x_mean, y_mean, z_mean = np.mean(np.asarray(pcd_centered.points), axis=0)
-                print(f"\nFrame {i}:")
-                print(f"  Observation point cloud - x:[{x_min:.3f}, {x_max:.3f}], y:[{y_min:.3f}, {y_max:.3f}], z:[{z_min:.3f}, {z_max:.3f}], mean:({x_mean:.3f}, {y_mean:.3f}, {z_mean:.3f})")
-                # do the same for the reference cad model
-                x_min_cad, y_min_cad, z_min_cad = np.min(np.asarray(cad_pcd_down.points), axis=0)
-                x_max_cad, y_max_cad, z_max_cad = np.max(np.asarray(cad_pcd_down.points), axis=0)
-                x_mean_cad, y_mean_cad, z_mean_cad = np.mean(np.asarray(cad_pcd_down.points), axis=0)
-                print(f"  CAD reference point cloud - x:[{x_min_cad:.3f}, {x_max_cad:.3f}], y:[{y_min_cad:.3f}, {y_max_cad:.3f}], z:[{z_min_cad:.3f}, {z_max_cad:.3f}], mean:({x_mean_cad:.3f}, {y_mean_cad:.3f}, {z_mean_cad:.3f})")
-                # Downsample current point cloud
-                pcd_down = pcd_centered.voxel_down_sample(voxel_size)
-                pcd_down.estimate_normals(
-                    search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.02, max_nn=30)
+            # Run ICP: centered CAD → centered observation
+            # Always starts from identity (independent per frame)
+            reg_result = o3d.pipelines.registration.registration_icp(
+                cad_down, pcd_down,
+                max_correspondence_distance=0.05,
+                init=np.eye(4),
+                estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane(),
+                criteria=o3d.pipelines.registration.ICPConvergenceCriteria(
+                    max_iteration=100, relative_fitness=1e-6, relative_rmse=1e-6
                 )
+            )
 
-                # Apply ICP for rotation only (point clouds are centered)
-                # This aligns the centered CAD model to the centered observation
-                initial_transform = np.eye(4)
-                max_correspondence_distance = 0.05
+            # Extract rotation from ICP (in centered/camera space)
+            R_icp = reg_result.transformation[:3, :3]
 
-                reg_result = o3d.pipelines.registration.registration_icp(
-                    cad_pcd_down, pcd_down,  # CAD model (source) -> observation (target)
-                    max_correspondence_distance,
-                    init=initial_transform,
-                    estimation_method=o3d.pipelines.registration.TransformationEstimationPointToPlane(),
-                    criteria=o3d.pipelines.registration.ICPConvergenceCriteria(
-                        max_iteration=100, relative_fitness=1e-6, relative_rmse=1e-6
-                    ),
+            # ===== STEP 2: Build transform in camera frame =====
+            # T_camera = [R_icp | centroid_camera]
+            #            [  0   |        1       ]
+            T_camera_from_cad = np.eye(4)
+            T_camera_from_cad[:3, :3] = R_icp
+            T_camera_from_cad[:3, 3] = centroid_camera
+
+            # ===== STEP 3: Transform to robot frame =====
+            # T_robot = T_robot_from_camera @ T_camera_from_cad
+            T_robot_from_cad = self.camera_to_robot_transform @ T_camera_from_cad
+
+            # Extract position and rotation in robot frame
+            pos_robot = T_robot_from_cad[:3, 3]
+            R_robot = T_robot_from_cad[:3, :3]
+
+            # Track first position for trajectory
+            if first_pos_robot is None:
+                first_pos_robot = pos_robot.copy()
+
+            # ===== STEP 4: Store results =====
+            results['T_robot_from_cad'].append(T_robot_from_cad)
+            results['object_pos_in_camera'].append(centroid_camera)
+            results['object_pos_in_robot'].append(pos_robot)
+            results['R_icp_in_centered_space'].append(R_icp)
+            results['R_object_in_robot'].append(R_robot)
+            results['displacement_from_start'].append(pos_robot - first_pos_robot)
+            results['icp_fitness'].append(reg_result.fitness)
+            results['frame_idx'].append(i)
+
+        # Convert to arrays
+        for key in results:
+            results[key] = np.array(results[key])
+
+        # Add metadata
+        results['cad_centroid_in_cad_frame'] = cad_centroid_in_cad_frame
+        results['first_pos_robot'] = first_pos_robot
+
+        print(f"\nTracked {len(results['frame_idx'])}/{len(point_clouds)} frames "
+              f"(avg fitness: {np.mean(results['icp_fitness']):.4f})")
+
+        return results
+    
+    def save_results(self, results, cad_info, output_dir, episode_num):
+        """
+        Save all tracking results to a single NPZ file per episode.
+
+        Output file contains clearly named arrays with reference frame annotations.
+        All spatial data explicitly indicates whether it's in camera or robot frame.
+        """
+        os.makedirs(output_dir, exist_ok=True)
+
+        # Combine all data with CLEAR, UNAMBIGUOUS key names
+        tracking_data = {
+            # ========== TRANSFORMS IN ROBOT FRAME ==========
+            'T_robot_from_cad': results['T_robot_from_cad'],  # (N,4,4) Centered CAD → robot
+
+            # ========== POSITIONS ==========
+            'object_pos_in_camera': results['object_pos_in_camera'],  # (N,3) Camera frame
+            'object_pos_in_robot': results['object_pos_in_robot'],    # (N,3) Robot frame
+
+            # ========== ROTATIONS ==========
+            'R_icp_in_centered_space': results['R_icp_in_centered_space'],  # (N,3,3) ICP result
+            'R_object_in_robot': results['R_object_in_robot'],              # (N,3,3) Robot frame
+
+            # ========== TRAJECTORY (Robot frame) ==========
+            'displacement_from_start': results['displacement_from_start'],  # (N,3) From first position
+
+            # ========== QUALITY METRICS ==========
+            'icp_fitness': results['icp_fitness'],  # (N,) ICP fitness scores
+            'frame_idx': results['frame_idx'],      # (N,) Frame indices
+
+            # ========== CAD MODEL INFO ==========
+            'cad_model_path': cad_info['model_path'],                       # str: Path to CAD file
+            'cad_num_sample_points': cad_info['sample_points'],            # int: Points sampled
+            'cad_centroid_in_cad_frame': results['cad_centroid_in_cad_frame'],  # (3,) CAD centroid
+            'cad_scale_factor': cad_info.get('scale', 0.001),              # float: Scale applied
+
+            # ========== REFERENCE TRANSFORMS ==========
+            'T_robot_from_camera': self.camera_to_robot_transform,  # (4,4) Camera→robot transform
+            'first_pos_robot': results['first_pos_robot'],          # (3,) First tracked position
+
+            # ========== METADATA ==========
+            'episode_number': episode_num,                                  # int
+            'num_frames_tracked': len(results['frame_idx']),               # int
+            'num_frames_total': results.get('total_frames', len(results['frame_idx']))  # int
+        }
+
+        # Save as single NPZ file
+        output_file = os.path.join(output_dir, f"episode_{episode_num:02d}_tracking.npz")
+        np.savez(output_file, **tracking_data)
+
+        print(f"\nSaved tracking data to: {output_file}")
+        print(f"  - {len(results['frame_idx'])} frames tracked")
+        print(f"  - Average fitness: {np.mean(results['icp_fitness']):.4f}")
+
+        return output_file
+    
+    def plot_trajectory(self, positions, frame_indices, output_dir, fitness_threshold):
+        """Generate and save trajectory visualization."""
+        fig, axes = plt.subplots(1, 2, figsize=(12, 5))
+        
+        # Position over time
+        axes[0].plot(frame_indices, positions[:, 0], 'r-', label='X', linewidth=2)
+        axes[0].plot(frame_indices, positions[:, 1], 'g-', label='Y', linewidth=2)
+        axes[0].plot(frame_indices, positions[:, 2], 'b-', label='Z', linewidth=2)
+        axes[0].set_xlabel('Frame Index', fontsize=12)
+        axes[0].set_ylabel('Position (m)', fontsize=12)
+        axes[0].set_title(f'Object Position Over Time (fitness >= {fitness_threshold})', 
+                         fontsize=14)
+        axes[0].legend(fontsize=10)
+        axes[0].grid(True, alpha=0.3)
+        
+        # X-Y trajectory
+        axes[1].plot(positions[:, 0], positions[:, 1], 'b-', linewidth=2)
+        axes[1].scatter(positions[0, 0], positions[0, 1], c='green', s=150, 
+                       marker='o', label='Start', zorder=5)
+        axes[1].scatter(positions[-1, 0], positions[-1, 1], c='red', s=150, 
+                       marker='x', label='End', zorder=5)
+        axes[1].set_xlabel('X (m)', fontsize=12)
+        axes[1].set_ylabel('Y (m)', fontsize=12)
+        axes[1].set_title('X-Y Trajectory', fontsize=14)
+        axes[1].legend(fontsize=10)
+        axes[1].grid(True, alpha=0.3)
+        axes[1].axis('equal')
+        
+        plt.tight_layout()
+        save_path = os.path.join(output_dir, "trajectory_preview.png")
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
+        
+        print(f"Saved trajectory preview to: {save_path}")
+
+
+
+def main():
+    """Main execution pipeline."""
+    # Load configurations
+    OmegaConf.register_new_resolver("phantom-touch", 
+                                   lambda: search_folder("/home", "phantom-touch"))
+    
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    repo_dir = search_folder("/home", "phantom-touch")
+    
+    cfg = OmegaConf.load(f"{current_dir}/cfg/threeD_tracking_offline.yaml")
+    paths_cfg = OmegaConf.load(f"{repo_dir}/cfg/paths.yaml")
+    
+    # Initialize tracker
+    tracker = ObjectTracker(cfg)
+    
+    # Generate episode paths
+    episodes = [
+        f"{paths_cfg.dataset_directory}/e{i}/{paths_cfg.metadata.experiment_name}_e{i}.{paths_cfg.metadata.dataset_format}"
+        for i in range(cfg.start_episode, cfg.end_episode + 1)
+    ]
+    
+    # Process each episode
+    for episode_idx, episode_path in enumerate(episodes):
+        episode_num = episode_idx + cfg.start_episode
+        print(f"\n{'='*60}\nProcessing Episode {episode_num}\n{'='*60}")
+        
+        try:
+            episode_data = np.load(episode_path)
+            depth_images = load_raw_depth_episode(
+                paths_cfg.recordings_directory, episode_num, tuple(cfg.depth_shape)
+            )
+            depth_images = depth_images[episode_data['indexes']]
+            print(f"Loaded {len(depth_images)} depth frames after applying epsisode filter from the dataset")
+        except FileNotFoundError:
+            print(f"File not found: {episode_path}")
+            continue
+        
+        if len(episode_data["image_0"]) < 10:
+            print(f"Episode has less than 10 frames, skipping...")
+            continue
+        
+        rgb_images = episode_data["original"]
+        temp_dir = os.path.join(paths_cfg.dataset_directory, "temporary_images_extraction")
+        
+        # Get or generate masks
+        if cfg.mask_objects:
+            masks = tracker.generate_masks_with_sam2(
+                rgb_images, temp_dir, cfg.sam2videoPredictor
+            )
+            # Save masks
+            os.makedirs(paths_cfg.object_masks_dir, exist_ok=True)
+            for i, mask in enumerate(masks):
+                cv2.imwrite(
+                    os.path.join(paths_cfg.object_masks_dir, f"mask_frame_{i:04d}.png"),
+                    mask
                 )
+            print(f"Saved {len(masks)} masks")
+        
+        if cfg.load_masks:
+            print(f"Loading masks from {paths_cfg.object_masks_dir}...")
+            masks = tracker.load_masks(paths_cfg.object_masks_dir)
+            print(f"Loaded {len(masks)} masks")
+        
+        # Process point clouds
+        print("\nConverting depth to point clouds...")
+        point_clouds, centroids = tracker.process_point_clouds(
+            depth_images, masks, rgb_images
+        )
+        
+        # Load CAD model
+        print(f"\nLoading CAD model from {cfg.CAD_MODEL_PATH}...")
+        cad_pcd, cad_mesh = tracker.load_cad_model(
+            cfg.CAD_MODEL_PATH, 
+            num_samples=cfg.get('cad_sample_points', 10000),
+            scale=cfg.get('cad_scale', 0.001)
+        )
+        print(f"CAD model loaded with {len(cad_mesh.vertices)} vertices")
+        
+        # Align with ICP
+        icp_cfg = cfg.get('icp', {})
+        results = tracker.align_with_icp(
+            point_clouds, centroids, cad_pcd,
+            voxel_size=icp_cfg.get('voxel_size', 0.005)
+        )
+        
+        # Store total frames for metadata
+        results['total_frames'] = len(point_clouds)
+        
+        # Save results
+        cad_info = {
+            'model_path': cfg.CAD_MODEL_PATH,
+            'sample_points': cfg.get('cad_sample_points', 10000),
+            'scale': cfg.get('cad_scale', 0.001)
+        }
 
-                # Extract rotation from ICP result
-                # This is the rotation needed to align CAD orientation to observation orientation
-                rotation_icp = reg_result.transformation[:3, :3]
+        tracker.save_results(results, cad_info, paths_cfg.threeD_tracking_output_dir, episode_num)
 
-                # Combine with initial orientation to get absolute orientation in robot frame
-                orientation = rotation_icp @ INITIAL_ORIENTATION
+        # Generate trajectory plot (use robot frame positions)
+        if len(results['object_pos_in_robot']) > 0:
+            tracker.plot_trajectory(
+                results['object_pos_in_robot'], results['frame_idx'],
+                paths_cfg.threeD_tracking_output_dir,
+                fitness_threshold=icp_cfg.get('fitness_threshold', 0.5)
+            )
+        
+        print(f"\n✓ Episode {episode_num} completed successfully")
 
-                # Position comes directly from observation centroid (already in robot frame)
-                position = centroid
 
-                # Build full transformation matrix from robot base frame to observation pose
-                # This transforms the CAD model to match the observation
-                full_transform = np.eye(4)
-                full_transform[:3, :3] = orientation
-                full_transform[:3, 3] = position
-
-                # Filter based on fitness threshold
-                if reg_result.fitness >= FITNESS_THRESHOLD:
-                    transformations.append(full_transform)
-                    rotations.append(rotation_icp)  # Incremental rotation from ICP
-                    orientations.append(orientation)  # Absolute orientation
-                    positions.append(position)  # Absolute position
-                    translations.append(position - INITIAL_POSITION)  # Translation from initial
-                    fitness_scores.append(reg_result.fitness)
-                    frame_indices.append(i)
-
-                    print(f"Frame {i}: fitness={reg_result.fitness:.4f}, inlier_rmse={reg_result.inlier_rmse:.4f} [KEPT]")
-                    print(f"  Position (centroid): {position}")
-                    print(f"  Rotation angles (deg): {np.rad2deg(o3d.geometry.get_rotation_matrix_from_xyz(np.array([0, 0, 0])))}")
-                else:
-                    print(f"Frame {i}: fitness={reg_result.fitness:.4f}, inlier_rmse={reg_result.inlier_rmse:.4f} [REJECTED - LOW FITNESS]")
-
-            # Save results
-            transformations_array = np.array(transformations)
-            rotations_array = np.array(rotations)
-            orientations_array = np.array(orientations)
-            positions_array = np.array(positions)
-            translations_array = np.array(translations)
-            fitness_scores_array = np.array(fitness_scores)
-            frame_indices_array = np.array(frame_indices)
-
-            print(f"\nFiltering summary:")
-            print(f"  Total frames processed: {len(point_clouds)}")
-            print(f"  Frames kept (fitness >= {FITNESS_THRESHOLD}): {len(frame_indices)}")
-            print(f"  Frames rejected: {len(point_clouds) - len(frame_indices)}")
-            print(f"  Average fitness of kept frames: {np.mean(fitness_scores_array):.4f}")
-
-            os.makedirs(threeD_tracking_output_dir, exist_ok=True)
-            np.save(os.path.join(threeD_tracking_output_dir, "cad_to_observation_transforms.npy"), transformations_array)
-            np.save(os.path.join(threeD_tracking_output_dir, "icp_rotations.npy"), rotations_array)
-            np.save(os.path.join(threeD_tracking_output_dir, "absolute_orientations.npy"), orientations_array)
-            np.save(os.path.join(threeD_tracking_output_dir, "absolute_positions.npy"), positions_array)
-            np.save(os.path.join(threeD_tracking_output_dir, "translations_from_initial.npy"), translations_array)
-            np.save(os.path.join(threeD_tracking_output_dir, "fitness_scores.npy"), fitness_scores_array)
-            np.save(os.path.join(threeD_tracking_output_dir, "frame_indices.npy"), frame_indices_array)
-
-            # Also save CAD model info
-            cad_info = {
-                'model_path': CAD_MODEL_PATH,
-                'initial_position': INITIAL_POSITION,
-                'initial_orientation': INITIAL_ORIENTATION,
-                'sample_points': CAD_SAMPLE_POINTS,
-                'initial_centroid': cad_centroid_initial
-            }
-            np.save(os.path.join(threeD_tracking_output_dir, "cad_model_info.npy"), cad_info)
-
-            print(f"\nSaved results to {threeD_tracking_output_dir}:")
-            print(f"  - cad_to_observation_transforms.npy (4x4 matrices: CAD initial -> observation in robot frame)")
-            print(f"  - icp_rotations.npy (3x3 incremental rotation matrices from ICP)")
-            print(f"  - absolute_orientations.npy (3x3 absolute orientation matrices in robot frame)")
-            print(f"  - absolute_positions.npy (3D absolute position vectors in robot frame)")
-            print(f"  - translations_from_initial.npy (3D translation from initial CAD pose)")
-            print(f"  - fitness_scores.npy (ICP fitness scores for kept frames)")
-            print(f"  - frame_indices.npy (original frame indices of kept frames)")
-            print(f"  - cad_model_info.npy (CAD model metadata)")
-            print(f"\nNOTE: All positions and orientations are in robot base frame coordinate system")
-            print(f"NOTE: Only frames with fitness >= {FITNESS_THRESHOLD} are included in the outputs")
-
-            # Quick trajectory visualization (saved as image)
-            print("\nGenerating quick trajectory preview...")
-            positions_array = np.array(positions)
-
-            fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-
-            # Position over time (use actual frame indices for x-axis)
-            axes[0].plot(frame_indices_array, positions_array[:, 0], 'r-', label='X', linewidth=2)
-            axes[0].plot(frame_indices_array, positions_array[:, 1], 'g-', label='Y', linewidth=2)
-            axes[0].plot(frame_indices_array, positions_array[:, 2], 'b-', label='Z', linewidth=2)
-            axes[0].set_xlabel('Frame Index', fontsize=12)
-            axes[0].set_ylabel('Position (m)', fontsize=12)
-            axes[0].set_title(f'Object Position Over Time (fitness >= {FITNESS_THRESHOLD})', fontsize=14)
-            axes[0].legend(fontsize=10)
-            axes[0].grid(True, alpha=0.3)
-
-            # X-Y trajectory
-            axes[1].plot(positions_array[:, 0], positions_array[:, 1], 'b-', linewidth=2)
-            axes[1].scatter(positions_array[0, 0], positions_array[0, 1], c='green', s=150, marker='o', label='Start', zorder=5)
-            axes[1].scatter(positions_array[-1, 0], positions_array[-1, 1], c='red', s=150, marker='x', label='End', zorder=5)
-            axes[1].set_xlabel('X (m)', fontsize=12)
-            axes[1].set_ylabel('Y (m)', fontsize=12)
-            axes[1].set_title('X-Y Trajectory', fontsize=14)
-            axes[1].legend(fontsize=10)
-            axes[1].grid(True, alpha=0.3)
-            axes[1].axis('equal')
-
-            plt.tight_layout()
-            trajectory_preview_path = os.path.join(threeD_tracking_output_dir, "trajectory_preview.png")
-            plt.savefig(trajectory_preview_path, dpi=150, bbox_inches='tight')
-            plt.close()
-
-            print(f"Saved trajectory preview to: {trajectory_preview_path}")
-
-            # Optional: Visualize aligned point clouds
-            # Uncomment to visualize the first few aligned frames with CAD model overlay
-            # aligned_pcds = []
-            # num_frames_to_show = min(5, len(point_clouds))
-            # for i in range(num_frames_to_show):
-            #     # Transform CAD model to observation pose
-            #     cad_transformed = o3d.geometry.PointCloud(cad_pcd)
-            #     cad_transformed.transform(transformations[i])
-            #     cad_transformed.paint_uniform_color([1, 0, 0])  # Red for CAD model
-            #
-            #     # Color the observation point cloud
-            #     obs_colored = o3d.geometry.PointCloud(point_clouds[i])
-            #     obs_colored.paint_uniform_color([0, i/num_frames_to_show, 1-i/num_frames_to_show])  # Blue gradient
-            #
-            #     aligned_pcds.append(cad_transformed)
-            #     aligned_pcds.append(obs_colored)
-            #
-            # # Add coordinate frame at robot base
-            # coord_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=0.1)
-            # o3d.visualization.draw_geometries(aligned_pcds + [coord_frame])
+if __name__ == "__main__":
+    main()
