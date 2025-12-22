@@ -102,11 +102,11 @@ Note: Take note of the paths of final and intermediary outputs, and make sure to
 ### Run Hamer
 1. In `phantom-touch`, go to the `hamer` directory:
     ```bash
-    cd src/hamer
+    cd src/segment_hands
     ```
 2. Adapt the `config` in `conf` to your paths and run:
     ```bash
-    python scripts/segment_hands.py
+    python scripts/run_vitpose.py
     ```
 
 ## Collecting Data from Orbbec RGB-D Camera
@@ -172,7 +172,104 @@ To collect RGB, depth, raw depth, and point cloud aligned data from the Orbbec R
 5. Wait for frame initialization then press `r`
 
 
-# Running phantom-touch pipeline (slimming ongoing)
+# Running phantom-touch pipeline
+
+We provide a comprehensive bash script automation that handles the entire pipeline with proper configuration management.
+
+📖 **See [PIPELINE_GUIDE.md](PIPELINE_GUIDE.md) for detailed quick reference and troubleshooting**
+
+### Quick Start (3 Steps)
+
+1. **Validate your environment:**
+   ```bash
+   ./validate_environment.sh
+   ```
+
+2. **Configure the pipeline:**
+   ```bash
+   cp pipeline_config.env my_experiment.env
+   # Edit with your experiment details
+   nano my_experiment.env
+   # Source the configuration
+   source my_experiment.env
+   ```
+
+3. **Run the pipeline:**
+   ```bash
+   ./run_phantom_pipeline.sh "${EXPERIMENT_NAME}" "${DATA_DIR}" "${MODEL_DIR}"
+   ```
+
+### Key Features
+
+The automated pipeline:
+- ✅ **Auto-configures** all YAML configurations with your paths
+- ✅ **Creates directories** automatically with proper structure
+- ✅ **Backs up configs** before modification (timestamped)
+- ✅ **Validates steps** and reports errors clearly
+- ✅ **Supports skipping** steps for debugging/rerunning
+- ✅ **Color-coded output** for easy monitoring
+- ✅ **Restores configs** when finished (optional)
+
+### Utility Commands
+
+```bash
+# Check environment and dependencies
+./validate_environment.sh
+
+# Check outputs for an experiment
+./pipeline_utils.sh check-outputs /home/epon04yc/pick_and_place_phantom
+
+# List all episodes
+./pipeline_utils.sh list-episodes /home/epon04yc/pick_and_place_phantom
+
+# Count frames per episode
+./pipeline_utils.sh count-frames /home/epon04yc/pick_and_place_phantom
+
+# Verify CAD model
+./pipeline_utils.sh verify-cad /path/to/model.obj
+
+# Clean backup files
+./pipeline_utils.sh clean-backups
+
+# Show all available commands
+./pipeline_utils.sh help
+```
+
+### Advanced Usage
+
+**Skip specific steps:**
+```bash
+# Skip VitPose (step 1) and SAM2 (step 3)
+./run_phantom_pipeline.sh my_experiment /path/to/data --skip-step 1 --skip-step 3
+```
+
+**Custom configuration per run:**
+```bash
+# Use different config file
+source my_custom_experiment.env
+./run_phantom_pipeline.sh "${EXPERIMENT_NAME}" "${DATA_DIR}"
+```
+
+### Pipeline Steps Summary
+
+| Step | Description | Output |
+|------|-------------|--------|
+| 0 | Update configurations | Config files adapted |
+| 1 | VitPose hand segmentation | Hand keypoints |
+| 2 | Split episodes | Individual episode folders |
+| 3 | SAM2 hand masking | Hand segmentation masks |
+| 4 | 3D hand projection | 3D hand point clouds |
+| 5 | Inpainting | Images with hands removed |
+| 6 | Phantom data creation | Robot-compatible dataset |
+| 7 | 3D object tracking | Object pose trajectories |
+| 8 | Depth patch rendering | Contact depth patches |
+
+---
+
+## Manual Pipeline (Advanced Users)
+
+For manual step-by-step execution, see sections below or refer to [PIPELINE_GUIDE.md](PIPELINE_GUIDE.md).
+
 To collect data, one has to first run the orbbec c++ script as described in the collection step using method 1.
 
 First adapt the config file in the following location to include your addresses and experiment name:
@@ -182,7 +279,7 @@ cfg/paths.yaml
 Next, to get the vitpose hands run the following:
 ```
 cd src/segment_hands/scripts
-python segment_hands.py
+python run_vitpose.py
 ```
 after adapting the config files in: 
 ```
@@ -248,3 +345,21 @@ cd render_contact_depth_patches
 python render_depth_patches_phantom.py
 ```
 To be continued...
+
+## Automation Files Reference
+
+The repository now includes comprehensive automation scripts:
+
+### Main Scripts
+- **`run_phantom_pipeline.sh`** - Complete pipeline automation (8 steps)
+- **`validate_environment.sh`** - Environment and dependency validation
+- **`pipeline_utils.sh`** - Utility commands for pipeline management
+
+### Configuration Templates  
+- **`pipeline_config.env`** - Configuration template (copy and customize)
+
+### Documentation
+- **`PIPELINE_GUIDE.md`** - Quick reference guide and troubleshooting
+- **`AUTOMATION_SUMMARY.md`** - Detailed automation documentation
+
+All scripts are executable and include comprehensive help text. Run with `--help` or see documentation files for details.

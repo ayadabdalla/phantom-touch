@@ -303,8 +303,8 @@ def render_depth_patches(cfg):
     # Setup object
     _, qpos_addr = setup_object_in_scene(model, "Strawberry")
 
-    # Setup renderer
-    out_dir = os.path.join(cfg.PHANTOM_DATASET_ROOT, cfg.OUTPUT_DIR_NAME)
+    # Setup renderer - create episode-specific output directory
+    out_dir = os.path.join(cfg.PHANTOM_DATASET_ROOT, cfg.OUTPUT_DIR_NAME, f"e{episode_num}")
     os.makedirs(out_dir, exist_ok=True)
     logging.info(f"Output directory: {out_dir}")
 
@@ -384,7 +384,7 @@ def render_depth_patches(cfg):
                 # turn off depth rendering for RGB
                 renderer.disable_depth_rendering()
                 rgb = renderer.render()
-                rgb_filename = f"ep{episode_num:02d}_frame_{episode_frame_idx:04d}_{cam_name}_rgb.png"
+                rgb_filename = f"frame_{episode_frame_idx:04d}_{cam_name}_rgb.png"
                 rgb_path = os.path.join(out_dir, rgb_filename)
                 iio.imwrite(rgb_path, rgb)
 
@@ -392,7 +392,7 @@ def render_depth_patches(cfg):
                 renderer.enable_depth_rendering()
                 depth_m = renderer.render()  # depth in meters
                 depth_mm = np.clip(depth_m * 1000.0, 0, 65535).astype(np.uint16)
-                depth_filename = f"ep{episode_num:02d}_frame_{episode_frame_idx:04d}_{cam_name}_depth.png"
+                depth_filename = f"frame_{episode_frame_idx:04d}_{cam_name}_depth.png"
                 depth_path = os.path.join(out_dir, depth_filename)
                 iio.imwrite(depth_path, depth_mm)
 

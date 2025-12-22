@@ -3,7 +3,7 @@ metadata:
   # data_dir: /mnt/dataset_drive/ayad/data/phantom-touch
   data_dir: /home/epon04yc
   model_dir: /mnt/dataset_drive/ayad/data/phantom-touch
-  experiment_name: experimental_phantomn_touch_collection
+  experiment_name: pick_and_place_phantom
   dataset_format: npz
 
 masks_directory: ${metadata.data_dir}/${metadata.experiment_name}/episodes

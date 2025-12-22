@@ -136,6 +136,7 @@ matplotlib.use("TKAgg")
 import matplotlib.pyplot as plt
 import open3d as o3d
 import trimesh
+import sieve
 from omegaconf import OmegaConf
 
 from sam2.build_sam import build_sam2_video_predictor
@@ -211,7 +212,7 @@ class ObjectTracker:
         
         return pcd_robot, centroid_robot
     
-    def generate_masks_with_sam2(self, images, temp_dir, predictor_cfg):
+    def generate_masks_with_sam2(self, images, temp_dir, predictor_cfg, language_prompt=None):
         """Generate object masks using SAM2."""
         os.makedirs(temp_dir, exist_ok=True)
         
@@ -220,7 +221,42 @@ class ObjectTracker:
             cv2.imwrite(os.path.join(temp_dir, f"frame_{idx:04d}.png"), img)
         
         # Get centroid from user
-        centroid = self.get_centroid_from_user(images[0])
+        if language_prompt is not None:
+            print(f"Using language prompt for segmentation: {language_prompt}")
+            # Use SAM2 Sieve pipeline for language-based segmentation
+            sam = sieve.function.get("sieve/text-to-segment")
+            
+            # Create video from frames for sieve processing
+            video_path = os.path.join(temp_dir, "temp_video_for_sieve.mp4")
+            first_frame = images[0]
+            height, width, layers = first_frame.shape
+            frame_size = (width, height)
+            out = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, frame_size)
+            
+            for idx, img in enumerate(images):
+                frame_path = os.path.join(temp_dir, f"frame_{idx:04d}.png")
+                frame = cv2.imread(frame_path)
+                out.write(frame)
+            out.release()
+            
+            # Run sieve text-to-segment
+            input_video = sieve.File(path=video_path)
+            try:
+                sam_out = sam.run(input_video, language_prompt)
+                # Extract masks and get centroid from first frame
+                from utils.sam2utils import sievesamzip_to_numpy, extract_centroid
+                original_masks = sievesamzip_to_numpy(sam_out)
+                centroid_coords = extract_centroid(original_masks[0])
+                
+                if centroid_coords is None:
+                    raise ValueError(f"Failed to segment object with prompt: '{language_prompt}'")
+                
+                centroid = np.array(centroid_coords, dtype=np.float32)
+                print(f"Extracted centroid from language prompt: ({centroid[0]:.1f}, {centroid[1]:.1f})")
+            except Exception:
+                centroid = self.get_centroid_from_user(images[0])
+        else:
+            centroid = self.get_centroid_from_user(images[0])
         
         # Run SAM2
         predictor = build_sam2_video_predictor(
@@ -573,6 +609,10 @@ def main():
         
         try:
             episode_data = np.load(episode_path)
+            # if episode is empty, skip
+            if episode_data['image_0'].shape[0] == 0:
+                print(f"Episode {episode_num} is empty, skipping...")
+                continue
             depth_images = load_raw_depth_episode(
                 paths_cfg.recordings_directory, episode_num, tuple(cfg.depth_shape)
             )
@@ -587,25 +627,34 @@ def main():
             continue
         
         rgb_images = episode_data["original"]
-        temp_dir = os.path.join(paths_cfg.dataset_directory, "temporary_images_extraction")
+        temp_dir = os.path.join(paths_cfg.dataset_directory, "temporary_images_extraction", f"e{episode_num}")
+        
+        # Clean temp directory for this episode if it exists
+        if os.path.exists(temp_dir):
+            import shutil
+            shutil.rmtree(temp_dir)
+        os.makedirs(temp_dir, exist_ok=True)
         
         # Get or generate masks
         if cfg.mask_objects:
+            # generate masks instead with the same2 sieve
             masks = tracker.generate_masks_with_sam2(
-                rgb_images, temp_dir, cfg.sam2videoPredictor
+                rgb_images, temp_dir, cfg.sam2videoPredictor,
             )
-            # Save masks
-            os.makedirs(paths_cfg.object_masks_dir, exist_ok=True)
+            # Save masks in episode-specific folder
+            episode_mask_dir = os.path.join(paths_cfg.object_masks_dir, f"e{episode_num}")
+            os.makedirs(episode_mask_dir, exist_ok=True)
             for i, mask in enumerate(masks):
                 cv2.imwrite(
-                    os.path.join(paths_cfg.object_masks_dir, f"mask_frame_{i:04d}.png"),
+                    os.path.join(episode_mask_dir, f"mask_frame_{i:04d}.png"),
                     mask
                 )
-            print(f"Saved {len(masks)} masks")
+            print(f"Saved {len(masks)} masks to {episode_mask_dir}")
         
         if cfg.load_masks:
-            print(f"Loading masks from {paths_cfg.object_masks_dir}...")
-            masks = tracker.load_masks(paths_cfg.object_masks_dir)
+            episode_mask_dir = os.path.join(paths_cfg.object_masks_dir, f"e{episode_num}")
+            print(f"Loading masks from {episode_mask_dir}...")
+            masks = tracker.load_masks(episode_mask_dir)
             print(f"Loaded {len(masks)} masks")
         
         # Process point clouds

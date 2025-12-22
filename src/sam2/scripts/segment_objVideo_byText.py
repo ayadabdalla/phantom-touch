@@ -42,35 +42,33 @@ if __name__ == "__main__":
         if os.path.basename(root).startswith("e") and os.path.basename(root)[1:].isdigit():
             episodes.append(os.path.basename(root))
     episodes.sort(key=lambda x: int(x[1:]))  # sort by episode number
+    if os.path.exists(os.path.join(output_path, episodes[0])):
+        print(f"Output directory {os.path.join(output_path, episodes[0])} already exists. Skipping...")
+    # if number of files in the directory is greater than the number of files in the input directory
+    if len(os.listdir(os.path.join(output_path, episodes[0]))) == int(len(os.listdir(os.path.join(sam2_sieve_cfg.images_path, episodes[0])))/2 + 1):
+        print(f"Output directory {os.path.join(output_path, episodes[0])} already exists and has same number of files as the input directory. Skipping...")
+        sys.exit(0)
+    print(f"Processing episode {episodes[0]}...")
+    #### First workflow component: SAM2-SIEVE####
+    video_name=f"color_video_compiled_for_sieve_{now}.mp4"
+    sam = sieve.function.get("sieve/text-to-segment")
+    images_path = os.path.join(sam2_sieve_cfg.images_path, episodes[0])
+    input_video = filelist_to_mp4sieve(
+        images_path,
+        prefix="Color_",
+        output_path=f"{sam2_sieve_cfg.output_dir}/{video_name}",
+    )
+    sam_out = sam.run(input_video, sam2_sieve_cfg.text_prompt)
+    original_masks = sievesamzip_to_numpy(sam_out)
+    #### integration interface with the next workflow component: VIDEO-SAM2####
+    centroids = []
+    for mask in original_masks:
+        centroid = extract_centroid(mask)
+        if centroid is not None:
+            centroids.append(centroid)
+    centroids = np.array(centroids)
+    
     for episode in episodes:
-        if os.path.exists(os.path.join(output_path, episode)):
-            print(f"Output directory {os.path.join(output_path, episode)} already exists. Skipping...")
-            # if number of files in the directory is greater than the number of files in the input directory
-            if len(os.listdir(os.path.join(output_path, episode))) == int(len(os.listdir(os.path.join(sam2_sieve_cfg.images_path, episode)))/2 + 1):
-                print(f"Output directory {os.path.join(output_path, episode)} already exists and has same number of files as the input directory. Skipping...")
-                continue
-        print(f"Processing episode {episode}...")
-        #### First workflow component: SAM2-SIEVE####
-        video_name=f"color_video_compiled_for_sieve_{now}.mp4"
-        sam = sieve.function.get("sieve/text-to-segment")
-        images_path = os.path.join(sam2_sieve_cfg.images_path, episode)
-        input_video = filelist_to_mp4sieve(
-            images_path,
-            prefix="Color_",
-            output_path=f"{sam2_sieve_cfg.output_dir}/{video_name}",
-        )
-        sam_out = sam.run(input_video, sam2_sieve_cfg.text_prompt)
-        original_masks = sievesamzip_to_numpy(sam_out)
-
-
-        #### integration interface with teh next workflow component: VIDEO-SAM2####
-        centroids = []
-        for mask in original_masks:
-            centroid = extract_centroid(mask)
-            if centroid is not None:
-                centroids.append(centroid)
-        centroids = np.array(centroids)
-
 
         #### Second workflow component: VIDEO-SAM2 ####
         sam2video_cfg = cfg.sam2videoPredictor

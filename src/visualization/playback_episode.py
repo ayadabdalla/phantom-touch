@@ -31,6 +31,7 @@ def overlay_images(mujoco_image, inpainted_image):
     # Convert back to 8-bit for display
     overlayed_image = (overlayed_image * 255).astype(np.uint8)
     return overlayed_image
+
 if __name__ == "__main__":
     visualization_cfg = OmegaConf.load(f"{repo_dir}/src/visualization/cfg/visualization.yaml")
     paths_cfg = OmegaConf.load(f"{repo_dir}/cfg/paths.yaml")
@@ -47,12 +48,15 @@ if __name__ == "__main__":
             continue
         if len(data["image_0"]) < 10:
             print(f"Episode {episode} {j} has less than 10 frames, length: {len(data['image_0'])}, skipping...")
+            continue
+        else:
+            print(f"Loaded episode {episode} {j} with {len(data['image_0'])} frames.")
         # replay the episode from image_0
         for i,data_image in enumerate(data["image_0"]):
             # overlay data images on originals
             overlayed = overlay_images(data_image,data["original"][i])
 
-            # cv2.imshow(f"data image_e{j}", data_image)
+            cv2.imshow(f"data image_e{j}", data_image)
             cv2.imshow("overlayed_data_image_on_original", overlayed)
             # cv2.imshow(f"original_e{j}", data["original"][i])
             if i == len(data["image_0"])//2:

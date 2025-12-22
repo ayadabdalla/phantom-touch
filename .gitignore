@@ -14,6 +14,10 @@ _DATA
 *.npz
 *.yaml
 
+# config backups
+*.yaml.backup.*
+*.env.backup.*
+
 # virtual env
 .phantom-touch
 pyorbbecsdk

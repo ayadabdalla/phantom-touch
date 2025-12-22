@@ -2,12 +2,12 @@ metadata:
   repo_dir: ${phantom-touch:}
   data_dir: /home/epon04yc
   model_dir: /mnt/dataset_drive/ayad/data/phantom-touch
-  experiment_name: experimental_phantomn_touch_collection # Name of the experiment
+  experiment_name: pick_and_place_phantom
   # experiment_specifics: white_nonreflective_cloth_light_on_ambient_light
 sam2sieve:
   # images_path : ${metadata.data_dir}/data/recordings/${metadata.experiment_name}/${metadata.experiment_specifics}/png_output/
   images_path : ${metadata.data_dir}/${metadata.experiment_name}/episodes
-  text_prompt : human on the left side of the image
+  text_prompt : human hand and arm
   # output_dir : ${metadata.data_dir}/data/output/${metadata.experiment_name}/${metadata.experiment_specifics}/sam2-sieve_output
   output_dir : ${metadata.data_dir}/${metadata.experiment_name}/sam2-sieve_output
 sam2videoPredictor:

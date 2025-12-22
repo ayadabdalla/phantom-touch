@@ -1,7 +1,7 @@
-experiment_name: experimental_phantomn_touch_collection
-vitpose_out_folder: /home/epon04yc/${experiment_name}/vitpose_output/episodes # Output folder to save vitpose results
+experiment_name: pick_and_place_phantom
+vitpose_out_folder: /home/epon04yc/pick_and_place_phantom/vitpose_output/episodes
 file_type: ['*.jpg', '*.png']
-img_folder: /home/epon04yc/${experiment_name} # Folder with input images
+img_folder: /home/epon04yc/pick_and_place_phantom
 crop:
   x1: 800
   y1: 280 
