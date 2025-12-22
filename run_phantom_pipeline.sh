@@ -40,14 +40,14 @@ CAD_SCALE="0.001"
 SIEVE_TEXT_PROMPT="human hand and arm"
 OBJECT_TEXT_PROMPT="green object"
 
-# Episode range (adjust as needed)
+# Episode range (will be auto-detected after split)
 START_EPISODE=0
-END_EPISODE=11
+END_EPISODE=-1  # Will be set automatically after episode splitting
 
 # Camera transform path
 CAMERA_TRANSFORM_PATH="${REPO_DIR}/src/cameras/Orbbec/data/robotbase_camera_transform_orbbec_fr4.npy"
 
-# Directories
+# Directories, these values will be used to update the yaml configurations automatically
 EXPERIMENT_DIR="${DATA_DIR}/${EXPERIMENT_NAME}"
 EPISODES_DIR="${EXPERIMENT_DIR}/episodes"
 VITPOSE_OUTPUT_DIR="${EXPERIMENT_DIR}/vitpose_output/episodes"
@@ -244,115 +244,166 @@ else
 fi
 
 ###############################################################################
-# Step 2: Split Episodes
+# Step 2: SAM2 Hand Mask Generation (on unsplit data)
 ###############################################################################
 
 if ! should_skip_step 2; then
-    print_header "Step 2: Splitting Episodes"
-    
-    PREPROCESSOR_CONFIG="${REPO_DIR}/src/phantom_touch/cfg/preprocessors.yaml"
-    
-    # Backup config
-    cp "${PREPROCESSOR_CONFIG}" "${PREPROCESSOR_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
-    
-    print_info "Running episode splitter..."
-    cd "${REPO_DIR}/src/phantom_touch/preprocessors"
-    python split_episodes.py
-    
-    print_success "Episodes split successfully"
-    echo ""
-else
-    print_warning "Skipping Step 2: Split Episodes"
-fi
+    print_header "Step 2: SAM2 Hand Mask Generation (on unsplit data)"
 
-###############################################################################
-# Step 3: SAM2 Hand Mask Generation
-###############################################################################
-
-if ! should_skip_step 3; then
-    print_header "Step 3: SAM2 Hand Mask Generation"
-    
     SAM2_CONFIG="${REPO_DIR}/src/sam2/cfg/sam2_object_by_text.yaml"
-    
+
     # Backup and update config
     cp "${SAM2_CONFIG}" "${SAM2_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
-    
-    # Update nested values (this is more complex for nested YAML)
+
+    # Update to point to unsplit data (EXPERIMENT_DIR, not EPISODES_DIR)
     sed -i "s|  experiment_name:.*|  experiment_name: ${EXPERIMENT_NAME}|" "${SAM2_CONFIG}"
     sed -i "s|  data_dir:.*|  data_dir: ${DATA_DIR}|" "${SAM2_CONFIG}"
     sed -i "s|  text_prompt :.*|  text_prompt : ${SIEVE_TEXT_PROMPT}|" "${SAM2_CONFIG}"
-    
-    create_directory "${SAM2VID_OUTPUT_DIR}"
-    
-    print_info "Running SAM2 hand segmentation..."
-    print_warning "This step requires SIEVE API and may take time per episode"
+    # Point images_path to unsplit directory (remove /episodes from path)
+    sed -i "s|  images_path :.*|  images_path : \${metadata.data_dir}/\${metadata.experiment_name}|" "${SAM2_CONFIG}"
+    sed -i "s|  video_frames_dir :.*|  video_frames_dir : \${metadata.data_dir}/\${metadata.experiment_name}|" "${SAM2_CONFIG}"
+    # Output should also go to root, not /episodes subdirectory
+    sed -i "s|  output_dir : \${metadata.data_dir}/\${metadata.experiment_name}/sam2-vid_output/episodes|  output_dir : \${metadata.data_dir}/\${metadata.experiment_name}/sam2-vid_output|" "${SAM2_CONFIG}"
+
+    create_directory "${EXPERIMENT_DIR}/sam2-vid_output"
+
+    print_info "Running SAM2 hand segmentation on full unsplit dataset..."
+    print_warning "This step requires SIEVE API and may take time"
     cd "${REPO_DIR}/src/sam2/scripts"
     python segment_objVideo_byText.py
-    
+
     print_success "SAM2 hand masks generated"
     echo ""
 else
-    print_warning "Skipping Step 3: SAM2 Hand Masks"
+    print_warning "Skipping Step 2: SAM2 Hand Masks"
 fi
 
 ###############################################################################
-# Step 4: 3D Hand Projection
+# Step 3: SAM2 Object Mask Generation (on unsplit data)
+###############################################################################
+
+if ! should_skip_step 3; then
+    print_header "Step 3: SAM2 Object Mask Generation (on unsplit data)"
+
+    SAM2_OBJECT_CONFIG="${REPO_DIR}/src/sam2/cfg/sam2_object_by_text.yaml"
+
+    # Note: Using the same config file, just changing the text prompt
+    # The config was already updated in Step 2, just need to change prompt
+
+    # Update text prompt for object segmentation
+    sed -i "s|  text_prompt :.*|  text_prompt : ${OBJECT_TEXT_PROMPT}|" "${SAM2_OBJECT_CONFIG}"
+    # Update output directory for object masks
+    sed -i "s|  output_dir : \${metadata.data_dir}/\${metadata.experiment_name}/sam2-vid_output|  output_dir : \${metadata.data_dir}/\${metadata.experiment_name}/object_masks|" "${SAM2_OBJECT_CONFIG}"
+
+    create_directory "${OBJECT_MASKS_DIR}"
+
+    print_info "Running SAM2 object segmentation on full unsplit dataset..."
+    print_warning "This step requires SIEVE API and may take time"
+    cd "${REPO_DIR}/src/sam2/scripts"
+    python segment_objVideo_byText.py
+
+    print_success "SAM2 object masks generated"
+    echo ""
+else
+    print_warning "Skipping Step 3: SAM2 Object Masks"
+fi
+
+###############################################################################
+# Step 4: Split Episodes (with SAM2 processed hands and objects)
 ###############################################################################
 
 if ! should_skip_step 4; then
-    print_header "Step 4: 3D Hand Projection"
-    
-    PROJECTION_CONFIG="${REPO_DIR}/src/segment_hands/cfg/3d_projection.yaml"
-    
+    print_header "Step 4: Splitting Episodes (including SAM2 masks)"
+
+    PREPROCESSOR_CONFIG="${REPO_DIR}/src/phantom_touch/cfg/preprocessors.yaml"
+
     # Backup config
-    cp "${PROJECTION_CONFIG}" "${PROJECTION_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
-    
-    print_info "Projecting segmented hands to 3D..."
-    cd "${REPO_DIR}/src/segment_hands/scripts"
-    python project_sam2hand_to_3d.py
-    
-    print_success "3D hand projection complete"
+    cp "${PREPROCESSOR_CONFIG}" "${PREPROCESSOR_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
+
+    print_info "Running episode splitter with SAM2 masks..."
+    cd "${REPO_DIR}/src/phantom_touch/preprocessors"
+    python split_episodes.py
+
+    print_success "Episodes split successfully"
     echo ""
 else
-    print_warning "Skipping Step 4: 3D Projection"
+    print_warning "Skipping Step 4: Split Episodes"
+fi
+
+# Auto-detect episode range after splitting
+if [[ "$END_EPISODE" -eq -1 ]]; then
+    print_info "Auto-detecting episode range..."
+
+    # Count episode directories
+    EPISODE_COUNT=$(find "${EPISODES_DIR}" -maxdepth 1 -type d -name "e*" | wc -l)
+
+    if [[ "$EPISODE_COUNT" -gt 0 ]]; then
+        END_EPISODE=$((EPISODE_COUNT - 1))
+        print_success "Detected ${EPISODE_COUNT} episodes (e0 to e${END_EPISODE})"
+    else
+        print_error "No episodes found in ${EPISODES_DIR}"
+        exit 1
+    fi
 fi
 
 ###############################################################################
-# Step 5: Inpainting (Hand Removal)
+# Step 5: 3D Hand Projection
 ###############################################################################
 
 if ! should_skip_step 5; then
-    print_header "Step 5: Inpainting - Removing Hands from Images"
-    
+    print_header "Step 5: 3D Hand Projection"
+
+    PROJECTION_CONFIG="${REPO_DIR}/src/segment_hands/cfg/3d_projection.yaml"
+
+    # Backup config
+    cp "${PROJECTION_CONFIG}" "${PROJECTION_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
+
+    print_info "Projecting segmented hands to 3D..."
+    cd "${REPO_DIR}/src/segment_hands/scripts"
+    python project_sam2hand_to_3d.py
+
+    print_success "3D hand projection complete"
+    echo ""
+else
+    print_warning "Skipping Step 5: 3D Projection"
+fi
+
+###############################################################################
+# Step 6: Inpainting (Hand Removal)
+###############################################################################
+
+if ! should_skip_step 6; then
+    print_header "Step 6: Inpainting - Removing Hands from Images"
+
     INPAINT_CONFIG="${REPO_DIR}/src/inpainting/cfg/inpaint.yaml"
-    
+
     # Backup and update config
     cp "${INPAINT_CONFIG}" "${INPAINT_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
-    
+
     sed -i "s|  rgb_base_path:.*|  rgb_base_path: ${EPISODES_DIR}|" "${INPAINT_CONFIG}"
     sed -i "s|  mask_base_path:.*|  mask_base_path: ${EPISODES_DIR}|" "${INPAINT_CONFIG}"
     sed -i "s|  output_path:.*|  output_path: ${INPAINTING_OUTPUT_DIR}|" "${INPAINT_CONFIG}"
     sed -i "s|  episode_start:.*|  episode_start: ${START_EPISODE}|" "${INPAINT_CONFIG}"
     sed -i "s|  episode_end:.*|  episode_end: $((END_EPISODE + 1))|" "${INPAINT_CONFIG}"
-    
+
     create_directory "${INPAINTING_OUTPUT_DIR}"
-    
+
     print_info "Running inpainting model..."
     cd "${REPO_DIR}/src/inpainting/scripts"
     python inpaint.py "${INPAINT_CONFIG}"
-    
+
     print_success "Inpainting complete"
     echo ""
 else
-    print_warning "Skipping Step 5: Inpainting"
+    print_warning "Skipping Step 6: Inpainting"
 fi
 
 ###############################################################################
-# Step 6: Phantom Data Creation
+# Step 7: Phantom Data Creation
 ###############################################################################
 
-if ! should_skip_step 6; then
-    print_header "Step 6: Phantom Data Creation"
+if ! should_skip_step 7; then
+    print_header "Step 7: Phantom Data Creation"
 
     Phantom_CONFIG="${REPO_DIR}/src/phantom_touch/cfg/phantom.yaml"
 
@@ -362,69 +413,69 @@ if ! should_skip_step 6; then
     # update episode range, the variable is episode_number and then it has two children start and end
     sed -i "s|  start:.*|  start: ${START_EPISODE}|" "${Phantom_CONFIG}"
     sed -i "s|  end:.*|  end: ${END_EPISODE}|" "${Phantom_CONFIG}"
-    
+
     create_directory "${DATASET_DIR}"
-    
+
     print_info "Creating phantom touch dataset..."
     cd "${REPO_DIR}/src/phantom_touch/scripts"
     python phantom_process_data.py
-    
+
     print_success "Phantom dataset created"
     echo ""
 else
-    print_warning "Skipping Step 6: Phantom Data Creation"
+    print_warning "Skipping Step 7: Phantom Data Creation"
 fi
 
 ###############################################################################
-# Step 7: 3D Object Tracking (Offline)
+# Step 8: 3D Object Tracking (Offline - using pre-generated SAM2 masks)
 ###############################################################################
 
-if ! should_skip_step 7; then
-    print_header "Step 7: 3D Object Tracking (Offline ICP)"
-    
+if ! should_skip_step 8; then
+    print_header "Step 8: 3D Object Tracking (Offline ICP - using existing masks)"
+
     TRACKING_CONFIG="${REPO_DIR}/src/render_contact_depth_patches/threeDoffline_object_tracking/cfg/threeD_tracking_offline.yaml"
-    
+
     # Backup and update config
     cp "${TRACKING_CONFIG}" "${TRACKING_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
-    
+
     update_yaml_value "${TRACKING_CONFIG}" "CAD_MODEL_PATH" "${CAD_MODEL_PATH}"
     update_yaml_value "${TRACKING_CONFIG}" "cad_scale" "${CAD_SCALE}"
     update_yaml_value "${TRACKING_CONFIG}" "CAMERA_TO_ROBOT_TRANSFORM_PATH" "${CAMERA_TRANSFORM_PATH}"
     update_yaml_value "${TRACKING_CONFIG}" "start_episode" "${START_EPISODE}"
     update_yaml_value "${TRACKING_CONFIG}" "end_episode" "${END_EPISODE}"
-    
-    # Update sieve language prompt for object segmentation
-    sed -i "s|  sieve_language_prompt:.*|  sieve_language_prompt: \"${OBJECT_TEXT_PROMPT}\"|" "${TRACKING_CONFIG}"
-    
+
+    # Set to load existing masks instead of generating new ones
+    update_yaml_value "${TRACKING_CONFIG}" "mask_objects" "False"
+    update_yaml_value "${TRACKING_CONFIG}" "load_masks" "True"
+
     create_directory "${TRACKING_OUTPUT_DIR}"
-    create_directory "${OBJECT_MASKS_DIR}"
-    
-    print_info "Running 3D object tracking with ICP..."
+
+    print_info "Running 3D object tracking with ICP using pre-generated masks..."
     print_warning "This may take significant time for point cloud processing"
     cd "${REPO_DIR}/src/render_contact_depth_patches/threeDoffline_object_tracking"
     python threeD_tracking_offline.py
-    
+
     print_success "3D object tracking complete"
     echo ""
 else
-    print_warning "Skipping Step 7: 3D Object Tracking"
+    print_warning "Skipping Step 8: 3D Object Tracking"
 fi
 
 ###############################################################################
-# Step 8: Render Contact Depth Patches
+# Step 9: Render Contact Depth Patches
 ###############################################################################
 
-if ! should_skip_step 8; then
-    print_header "Step 8: Rendering Contact Depth Patches"
-    
+if ! should_skip_step 9; then
+    print_header "Step 9: Rendering Contact Depth Patches"
+
     print_info "Rendering depth patches for contacts..."
     cd "${REPO_DIR}/src/render_contact_depth_patches"
     python render_depth_patches_phantom.py
-    
+
     print_success "Contact depth patches rendered"
     echo ""
 else
-    print_warning "Skipping Step 8: Render Depth Patches"
+    print_warning "Skipping Step 9: Render Depth Patches"
 fi
 
 ###############################################################################
@@ -435,7 +486,11 @@ print_header "Pipeline Complete!"
 echo ""
 echo -e "${GREEN}✓ All steps completed successfully!${NC}"
 echo ""
+echo "Episode Information:"
+echo "  • Episodes processed:  e${START_EPISODE} to e${END_EPISODE} (total: $((END_EPISODE - START_EPISODE + 1)))"
+echo ""
 echo "Output locations:"
+echo "  • Episodes directory:  ${EPISODES_DIR}"
 echo "  • VitPose outputs:     ${VITPOSE_OUTPUT_DIR}"
 echo "  • SAM2 hand masks:     ${SAM2VID_OUTPUT_DIR}"
 echo "  • Inpainted images:    ${INPAINTING_OUTPUT_DIR}"

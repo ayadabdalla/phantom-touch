@@ -87,6 +87,68 @@ class Preprocessor:
                         shutil.move(file, output_folder)
                 j += 1
 
+    def move_sam2_hand_masks(self):
+        """Move SAM2 hand masks to episode folders"""
+        if self.episodes is not None:
+            # SAM2 hand masks are saved to sam2-vid_output (unsplit)
+            # Need to get parent of experiment dir and look for sam2-vid_output
+            experiment_dir = os.path.dirname(self.paths_cfg.recordings_directory)
+            sam2_hand_source = os.path.join(experiment_dir, "sam2-vid_output")
+            sam2_hand_output = self.paths_cfg.sam2hand_output_directory
+
+            if not os.path.exists(sam2_hand_source):
+                print(f"SAM2 hand masks source directory not found: {sam2_hand_source}")
+                return
+
+            j = 0
+            for i, episode in enumerate(tqdm(self.episodes.values(), desc="Processing SAM2 hand mask episodes")):
+                # create a new folder for each episode
+                output_folder = os.path.join(sam2_hand_output, f"e{j}")
+                os.makedirs(output_folder, exist_ok=True)
+                # move the files to the new folder
+                for frame_number in tqdm(episode, desc=f"Moving SAM2 hand masks for episode {j}", leave=False):
+                    # get all files that include the frame number
+                    frame_number = str(frame_number).zfill(5)
+                    # Look in sam2-vid_output for unsplit mask files
+                    files = glob.glob(os.path.join(sam2_hand_source, f"*{frame_number}*"))
+                    for file in files:
+                        if os.path.isfile(file):  # Only move files, not directories
+                            shutil.move(file, output_folder)
+                j += 1
+
+    def move_sam2_object_masks(self):
+        """Move SAM2 object masks to episode folders"""
+        if self.episodes is not None:
+            # Object masks are in root object_masks_dir (unsplit)
+            # After split, they should go to object_masks_dir/e{j}/
+            object_masks_dir = self.paths_cfg.object_masks_dir
+
+            if not os.path.exists(object_masks_dir):
+                print(f"SAM2 object masks directory not found: {object_masks_dir}")
+                return
+
+            # Check if there are any mask files directly in the root directory
+            mask_files = glob.glob(os.path.join(object_masks_dir, "Mask_*.png"))
+            if len(mask_files) == 0:
+                print(f"No mask files found in {object_masks_dir}")
+                return
+
+            j = 0
+            for i, episode in enumerate(tqdm(self.episodes.values(), desc="Processing SAM2 object mask episodes")):
+                # create a new folder for each episode
+                output_folder = os.path.join(object_masks_dir, f"e{j}")
+                os.makedirs(output_folder, exist_ok=True)
+                # move the files to the new folder
+                for frame_number in tqdm(episode, desc=f"Moving SAM2 object masks for episode {j}", leave=False):
+                    # get all files that include the frame number
+                    frame_number = str(frame_number).zfill(5)
+                    # Look in root object_masks_dir for unsplit mask files
+                    files = glob.glob(os.path.join(object_masks_dir, f"*{frame_number}*"))
+                    for file in files:
+                        if os.path.isfile(file):  # Only move files, not directories
+                            shutil.move(file, output_folder)
+                j += 1
+
     def read_episodes(self):
         """read episodes as save in move_recordings"""
         recording_path = self.paths_cfg.recordings_directory
@@ -113,4 +175,17 @@ if __name__ == "__main__":
         episodes = data_preprocessor.split_episodes(paths_cfg.vitpose_output_directory)
         data_preprocessor.move_recordings()
         data_preprocessor.move_vitpose_outputs()
+
+        # Move SAM2 hand masks if they exist
+        experiment_dir = os.path.dirname(paths_cfg.recordings_directory)
+        sam2_hand_source = os.path.join(experiment_dir, "sam2-vid_output")
+        if os.path.exists(sam2_hand_source):
+            print("Moving SAM2 hand masks...")
+            data_preprocessor.move_sam2_hand_masks()
+
+        # Move SAM2 object masks if they exist
+        if os.path.exists(paths_cfg.object_masks_dir):
+            print("Moving SAM2 object masks...")
+            data_preprocessor.move_sam2_object_masks()
+
     print(len(episodes))

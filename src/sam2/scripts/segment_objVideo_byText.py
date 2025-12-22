@@ -1,5 +1,4 @@
 # workflow 2 sam2-sieve=>sam2-videoPredictor
-import sys
 import sieve
 import cv2
 import os
@@ -36,39 +35,60 @@ if __name__ == "__main__":
     if not os.path.exists(output_path):
         os.makedirs(output_path)
 
-    # get all diorectory names in the sam2_sieve_cfg.images_path
+    # Check if data is split into episodes or is unsplit
     episodes = []
     for root, dirs, files in os.walk(sam2_sieve_cfg.images_path):
         if os.path.basename(root).startswith("e") and os.path.basename(root)[1:].isdigit():
             episodes.append(os.path.basename(root))
-    episodes.sort(key=lambda x: int(x[1:]))  # sort by episode number
-    if os.path.exists(os.path.join(output_path, episodes[0])):
-        print(f"Output directory {os.path.join(output_path, episodes[0])} already exists. Skipping...")
-    # if number of files in the directory is greater than the number of files in the input directory
-    if len(os.listdir(os.path.join(output_path, episodes[0]))) == int(len(os.listdir(os.path.join(sam2_sieve_cfg.images_path, episodes[0])))/2 + 1):
-        print(f"Output directory {os.path.join(output_path, episodes[0])} already exists and has same number of files as the input directory. Skipping...")
-        sys.exit(0)
-    print(f"Processing episode {episodes[0]}...")
-    #### First workflow component: SAM2-SIEVE####
-    video_name=f"color_video_compiled_for_sieve_{now}.mp4"
-    sam = sieve.function.get("sieve/text-to-segment")
-    images_path = os.path.join(sam2_sieve_cfg.images_path, episodes[0])
-    input_video = filelist_to_mp4sieve(
-        images_path,
-        prefix="Color_",
-        output_path=f"{sam2_sieve_cfg.output_dir}/{video_name}",
-    )
-    sam_out = sam.run(input_video, sam2_sieve_cfg.text_prompt)
-    original_masks = sievesamzip_to_numpy(sam_out)
-    #### integration interface with the next workflow component: VIDEO-SAM2####
-    centroids = []
-    for mask in original_masks:
-        centroid = extract_centroid(mask)
-        if centroid is not None:
-            centroids.append(centroid)
-    centroids = np.array(centroids)
-    
+
+    # If no episodes found, treat the entire directory as one unsplit dataset
+    if len(episodes) == 0:
+        print("No episode directories found. Processing unsplit data...")
+        episodes = ["unsplit"]  # Dummy episode name for unsplit data
+    else:
+        episodes.sort(key=lambda x: int(x[1:]))  # sort by episode number
+
     for episode in episodes:
+        print(f"Processing {'unsplit data' if episode == 'unsplit' else f'episode {episode}'}...")
+
+        # Determine images path for this episode
+        if episode == "unsplit":
+            images_path = sam2_sieve_cfg.images_path
+        else:
+            images_path = os.path.join(sam2_sieve_cfg.images_path, episode)
+            # Check if output already exists and skip if complete
+            episode_output_path = os.path.join(output_path, episode)
+            if os.path.exists(episode_output_path):
+                input_file_count = len([f for f in os.listdir(images_path) if f.startswith('Color_')])
+                output_file_count = len(os.listdir(episode_output_path))
+                if output_file_count == int(input_file_count / 2 + 1):
+                    print(f"Output directory {episode_output_path} already exists and is complete. Skipping...")
+                    continue
+
+        #### First workflow component: SAM2-SIEVE####
+        # Run text-to-segment for this specific episode
+        video_name = f"color_video_compiled_for_sieve_{episode}_{now}.mp4"
+        sam = sieve.function.get("sieve/text-to-segment")
+        input_video = filelist_to_mp4sieve(
+            images_path,
+            prefix="Color_",
+            output_path=f"{sam2_sieve_cfg.output_dir}/{video_name}",
+        )
+        sam_out = sam.run(input_video, sam2_sieve_cfg.text_prompt)
+        original_masks = sievesamzip_to_numpy(sam_out)
+
+        #### integration interface with the next workflow component: VIDEO-SAM2####
+        # Extract centroids for this specific episode
+        centroids = []
+        for mask in original_masks:
+            centroid = extract_centroid(mask)
+            if centroid is not None:
+                centroids.append(centroid)
+        centroids = np.array(centroids)
+
+        if len(centroids) == 0:
+            print(f"No centroids found for {episode}, skipping...")
+            continue
 
         #### Second workflow component: VIDEO-SAM2 ####
         sam2video_cfg = cfg.sam2videoPredictor
@@ -78,9 +98,14 @@ if __name__ == "__main__":
         predictor = build_sam2_video_predictor(
             sam2video_cfg.model_cfg, sam2video_cfg.sam2_checkpoint, device=device
         )
-        images_path = sam2video_cfg.video_frames_dir
-        images_path = os.path.join(images_path, episode)
-        inference_state = predictor.init_state(video_path=images_path)
+
+        # Handle both split and unsplit data
+        if episode == "unsplit":
+            video_frames_path = sam2video_cfg.video_frames_dir
+        else:
+            video_frames_path = os.path.join(sam2video_cfg.video_frames_dir, episode)
+
+        inference_state = predictor.init_state(video_path=video_frames_path)
         predictor.reset_state(inference_state)
         _, out_obj_ids, out_mask_logits = predictor.add_new_points_or_box(
             inference_state=inference_state,
@@ -107,21 +132,42 @@ if __name__ == "__main__":
 
         #### store results ####
         frame_names = []
-        images_path = os.path.join(sam2_sieve_cfg.images_path, episode)
-        os.makedirs(images_path, exist_ok=True)
-        for root, dirs, files in os.walk(images_path):
-            if os.path.basename(root).startswith("e"):
-                for file in files:
-                    if file.startswith('Color_') and file.endswith(".png"):
-                        frame_names.append(os.path.join(root, file))
+        if episode == "unsplit":
+            search_path = sam2_sieve_cfg.images_path
+        else:
+            search_path = os.path.join(sam2_sieve_cfg.images_path, episode)
+
+        os.makedirs(search_path, exist_ok=True)
+
+        # For unsplit data, find Color_ files directly in the path
+        # For split data, look in episode subdirectories
+        if episode == "unsplit":
+            # Direct files in the directory
+            for file in sorted(os.listdir(search_path)):
+                if file.startswith('Color_') and file.endswith(".png"):
+                    frame_names.append(os.path.join(search_path, file))
+        else:
+            # Files in episode subdirectory - look directly in the episode folder
+            for file in sorted(os.listdir(search_path)):
+                if file.startswith('Color_') and file.endswith(".png"):
+                    frame_names.append(os.path.join(search_path, file))
+
         frame_names.sort(key=lambda p: os.path.splitext(p)[0])
 
         # now we have frame_names and mask_frames, next is to store them
         for i in range(mask_frames.shape[0]):
-            # check for the word recordings in the filename and replace it with the word output
             frame_name = frame_names[i]
-            frame_name = frame_name.replace("recordings", "sam2-vid_output") #TODO: either add the recordings subdirectory while recording data, or remove this line
-            frame_name = frame_name.replace("Color_", "Mask_")
-            os.makedirs(os.path.dirname(frame_name), exist_ok=True)
-            print(f"Saving {frame_name}")
-            cv2.imwrite(frame_name, mask_frames[i])
+            # Generate output path
+            if episode == "unsplit":
+                # For unsplit data, save directly to output directory
+                output_filename = os.path.basename(frame_name).replace("Color_", "Mask_")
+                output_file_path = os.path.join(output_path, output_filename)
+            else:
+                # For split data, maintain episode structure
+                output_filename = os.path.basename(frame_name).replace("Color_", "Mask_")
+                episode_output_path = os.path.join(output_path, episode)
+                output_file_path = os.path.join(episode_output_path, output_filename)
+
+            os.makedirs(os.path.dirname(output_file_path), exist_ok=True)
+            print(f"Saving {output_file_path}")
+            cv2.imwrite(output_file_path, mask_frames[i])

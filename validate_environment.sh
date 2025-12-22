@@ -125,10 +125,10 @@ done
 
 # Check 9: Model checkpoints
 print_check "Checking model checkpoints..."
-if [[ -d "src/hamer/_DATA" ]]; then
+if [[ -d "src/segment_hands/scripts/_DATA" ]]; then
     print_pass "Hamer models directory exists"
 else
-    print_warn "Hamer models directory not found (src/hamer/_DATA)"
+    print_warn "Hamer models directory not found (src/segment_hands/scripts/_DATA)"
 fi
 
 # Check 10: Disk space
