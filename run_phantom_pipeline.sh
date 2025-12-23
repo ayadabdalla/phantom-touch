@@ -29,7 +29,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Default values
-EXPERIMENT_NAME="${1:-pick_and_place_phantom}"
+EXPERIMENT_NAME="${1:-experiment_0}"
 DATA_DIR="${2:-/home/epon04yc}"
 MODEL_DIR="${3:-/mnt/dataset_drive/ayad/data/phantom-touch}"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,9 +40,12 @@ CAD_SCALE="0.001"
 SIEVE_TEXT_PROMPT="human hand and arm"
 OBJECT_TEXT_PROMPT="green object"
 
+# Reference frame for SAM2 (path to a good hand frame to copy to first episode)
+REFERENCE_FRAME_PATH="/home/epon04yc/experiment_0/good_frame/Color_1920x1080_3309701354ms_00101.png"  # Set this to your reference frame path, e.g., "/path/to/good_hand_frame.png"
+
 # Episode range (adjust as needed)
 START_EPISODE=0
-END_EPISODE=11
+END_EPISODE=2
 
 # Camera transform path
 CAMERA_TRANSFORM_PATH="${REPO_DIR}/src/cameras/Orbbec/data/robotbase_camera_transform_orbbec_fr4.npy"
@@ -272,6 +275,20 @@ fi
 if ! should_skip_step 3; then
     print_header "Step 3: SAM2 Hand Mask Generation"
     
+    # Copy reference frame to first episode if provided
+    COPIED_FRAME=""
+    if [[ -n "${REFERENCE_FRAME_PATH}" ]] && [[ -f "${REFERENCE_FRAME_PATH}" ]]; then
+        FIRST_EPISODE_DIR="${EPISODES_DIR}/e${START_EPISODE}"
+        if [[ -d "${FIRST_EPISODE_DIR}" ]]; then
+            # Copy with a distinctive name (frame 00000 to ensure it's first)
+            COPIED_FRAME="${FIRST_EPISODE_DIR}/Color_00000_reference.png"
+            cp "${REFERENCE_FRAME_PATH}" "${COPIED_FRAME}"
+            print_success "Copied reference frame to first episode: $(basename ${COPIED_FRAME})"
+        else
+            print_warning "First episode directory not found: ${FIRST_EPISODE_DIR}"
+        fi
+    fi
+    
     SAM2_CONFIG="${REPO_DIR}/src/sam2/cfg/sam2_object_by_text.yaml"
     
     # Backup and update config
@@ -288,6 +305,21 @@ if ! should_skip_step 3; then
     print_warning "This step requires SIEVE API and may take time per episode"
     cd "${REPO_DIR}/src/sam2/scripts"
     python segment_objVideo_byText.py
+    
+    # Cleanup: Remove copied reference frame and its generated mask
+    if [[ -n "${COPIED_FRAME}" ]] && [[ -f "${COPIED_FRAME}" ]]; then
+        rm -f "${COPIED_FRAME}"
+        print_info "Removed copied reference frame"
+        
+        # Remove corresponding mask if it was generated (masks have "mask_" prefix, no "Color_" prefix)
+        FRAME_BASENAME=$(basename ${COPIED_FRAME} .png)
+        FRAME_BASENAME=${FRAME_BASENAME#Color_}  # Strip Color_ prefix
+        MASK_FILE="${SAM2VID_OUTPUT_DIR}/e${START_EPISODE}/mask_${FRAME_BASENAME}.png"
+        if [[ -f "${MASK_FILE}" ]]; then
+            rm -f "${MASK_FILE}"
+            print_info "Removed generated mask for reference frame"
+        fi
+    fi
     
     print_success "SAM2 hand masks generated"
     echo ""
@@ -330,7 +362,7 @@ if ! should_skip_step 5; then
     cp "${INPAINT_CONFIG}" "${INPAINT_CONFIG}.backup.$(date +%Y%m%d_%H%M%S)"
     
     sed -i "s|  rgb_base_path:.*|  rgb_base_path: ${EPISODES_DIR}|" "${INPAINT_CONFIG}"
-    sed -i "s|  mask_base_path:.*|  mask_base_path: ${EPISODES_DIR}|" "${INPAINT_CONFIG}"
+    sed -i "s|  mask_base_path:.*|  mask_base_path: ${SAM2VID_OUTPUT_DIR}|" "${INPAINT_CONFIG}"
     sed -i "s|  output_path:.*|  output_path: ${INPAINTING_OUTPUT_DIR}|" "${INPAINT_CONFIG}"
     sed -i "s|  episode_start:.*|  episode_start: ${START_EPISODE}|" "${INPAINT_CONFIG}"
     sed -i "s|  episode_end:.*|  episode_end: $((END_EPISODE + 1))|" "${INPAINT_CONFIG}"

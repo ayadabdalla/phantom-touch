@@ -31,7 +31,7 @@ if __name__ == "__main__":
     print(f"Color shape: {numpy_color.shape}")
 
     # Load mask images and their paths
-    numpy_masks, mask_paths = load_rgb_images(masks_directory_path, prefix="Mask_", return_path=True)
+    numpy_masks, mask_paths = load_rgb_images(masks_directory_path, prefix="mask_", return_path=True)
     print(f"Mask shape: {numpy_masks.shape}")
 
     # Load depth images
