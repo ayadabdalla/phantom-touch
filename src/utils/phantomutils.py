@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 from scipy import linalg
 from scipy.spatial.transform import Rotation as R
+from scipy.signal import savgol_filter
 
 def calculate_action(hand_keypoints,extrinsics):
     if not isinstance(hand_keypoints, np.ndarray):
@@ -21,15 +22,31 @@ def calculate_action(hand_keypoints,extrinsics):
     index_tip = index_finger[
         3
     ]  # The 4th point of index finger (index 8 in original array)
-    target_position = (thumb_tip + index_tip) / 2
+    # target_position = (thumb_tip + index_tip) / 2
+    # bias towards thumb a bit
+    target_position = 0.7 * thumb_tip + 0.3 * index_tip
 
     # 2. Calculate target orientation by fitting a plane through thumb and index finger points
     # Combine all points from thumb and index finger
     plane_points = np.vstack((thumb, index_finger))
-
+    
+    # Remove outlier keypoints using median-based filtering
+    # Calculate distances from each point to the median point
+    median_point = np.median(plane_points, axis=0)
+    distances = np.linalg.norm(plane_points - median_point, axis=1)
+    median_dist = np.median(distances)
+    
+    # Keep only points within 2.5 * median absolute deviation
+    mad = np.median(np.abs(distances - median_dist))
+    threshold = median_dist + 2.5 * mad
+    valid_mask = distances < threshold
+    
+    # Ensure we keep at least 4 points for stable plane fitting
+    if np.sum(valid_mask) >= 4:
+        plane_points = plane_points[valid_mask]
+    
     # Fit a plane to the points using Singular Value Decomposition (SVD)
     centroid = np.mean(plane_points, axis=0)
-    _, _, vh = np.linalg.svd(plane_points - centroid)
     # Center the points
     centered_points = plane_points - centroid
 
@@ -45,6 +62,8 @@ def calculate_action(hand_keypoints,extrinsics):
     # ensure the normal vector points in the negative z direction
     if normal_vector[2] > 0:
         normal_vector = -normal_vector
+    
+    # Use median of thumb points for more stable axis calculation
     thumb_axis = thumb[3] - thumb[0]
     thumb_axis = thumb_axis / np.linalg.norm(thumb_axis)
 
@@ -69,8 +88,15 @@ def calculate_action(hand_keypoints,extrinsics):
     target_orn = r.as_euler(
         "xyz", degrees=False
     )
-    grips = np.linalg.norm(thumb_tip - index_tip, axis=0)
-    grips = grips / 0.1 # 10 cm is the max grip
+    # Calculate grip distance (thumb tip to index tip distance)
+    grip_distance = np.linalg.norm(thumb_tip - index_tip, axis=0)
+    
+    # The human hand grip varies by about 4cm (0.12m to 0.16m typically)
+    # Map this to the full [0, 1] range for the gripper
+    min_grip = 0  # Minimum expected grip distance (closed)
+    max_grip = 0.18  # Maximum expected grip distance (open)
+    grips = np.clip((grip_distance - min_grip) / (max_grip - min_grip), 0.0, 1.0)
+    
     action = np.concatenate(
         [
             target_position.flatten(),
@@ -113,47 +139,68 @@ def overlay_image(color_image, mujoco_image, size=(432, 240)):
     return overlayed_image
 
 def filter_episode(npz_file):
-    # do exponential average on only the z axis
-    action=np.array(npz_file["action"]).reshape(-1, 7)
+    # Apply polynomial smoothing for smooth trajectories
+    action = np.array(npz_file["action"]).reshape(-1, 7)
     image_0 = np.array(npz_file["image_0"]).reshape(-1, 240, 432, 3)
     state = np.array(npz_file["state"]).reshape(-1, 14)
     keypoints = np.array(npz_file["keypoints"]).reshape(-1, 21, 3)
     inpainted = np.array(npz_file["inpainted"]).reshape(-1, 240, 432, 3)
     originals = np.array(npz_file["original"])
     index = np.array(npz_file["indexes"]).reshape(-1)
-    filtered_xyz = np.zeros_like(action[:, :3])
-    filtered_euler = np.zeros_like(action[:, 3:6])
-
-    indeces = set()
-    for i in range(0, len(action) - 2):
-        # Smooth position (x, y, z)
-        filtered_xyz[i] = 0.5 * action[i + 2, :3] + 0.5 * action[i + 1, :3]
-
-        # Smooth Euler angles with wrap-around consideration
-        raw_euler = np.stack([action[i + 1, 3:6], action[i + 2, 3:6]], axis=0)
-        filtered_euler[i] = np.arctan2(np.sin(raw_euler).mean(axis=0), np.cos(raw_euler).mean(axis=0))
-
-        # Check for position anomalies
-        pos_diffs = np.abs(action[i, :3] - filtered_xyz[i])
+    absolute_index = np.array(npz_file.get("absolute_indexes", index)).reshape(-1)
+    
+    # Detect and remove frames with large orientation changes
+    indeces_to_remove = set()
+    if len(action) > 1:
+        for i in range(1, len(action)):
+            # Calculate angular differences using shortest path on circle
+            angle_diffs = np.abs(np.arctan2(
+                np.sin(action[i, 3:6] - action[i-1, 3:6]),
+                np.cos(action[i, 3:6] - action[i-1, 3:6])
+            ))
+            
+            # Remove frames with large orientation jumps (> 0.2 radians ≈ 11.5 degrees)
+            if np.any(angle_diffs > 0.2):
+                indeces_to_remove.add(i)
+    
+    # Remove problematic frames
+    if indeces_to_remove:
+        indeces_to_remove = sorted(indeces_to_remove)
+        action = np.delete(action, indeces_to_remove, axis=0)
+        image_0 = np.delete(image_0, indeces_to_remove, axis=0)
+        state = np.delete(state, indeces_to_remove, axis=0)
+        keypoints = np.delete(keypoints, indeces_to_remove, axis=0)
+        inpainted = np.delete(inpainted, indeces_to_remove, axis=0)
+        originals = np.delete(originals, indeces_to_remove, axis=0)
+        index = np.delete(index, indeces_to_remove, axis=0)
+        absolute_index = np.delete(absolute_index, indeces_to_remove, axis=0)
+    
+    # Apply polynomial smoothing using Savitzky-Golay filter
+    if len(action) >= 11:  # Need at least window_length points
+        window_length = min(11, len(action) if len(action) % 2 == 1 else len(action) - 1)
+        polyorder = 3  # Cubic polynomial
         
-        # Check for angle anomalies using shortest angular distance
-        angle_diffs = np.abs(np.arctan2(np.sin(action[i, 3:6] - filtered_euler[i]),
-                                        np.cos(action[i, 3:6] - filtered_euler[i])))
-
-        if np.any(pos_diffs > 0.2) or np.any(angle_diffs > 1):
-            indeces.add(i)
-    indeces = sorted(indeces)
-    action = np.delete(action, indeces, axis=0)
-    image_0 = np.delete(image_0, indeces, axis=0)
-    state = np.delete(state, indeces, axis=0)
-    keypoints = np.delete(keypoints, indeces, axis=0)
-    inpainted = np.delete(inpainted, indeces, axis=0)
-    originals = np.delete(originals, indeces, axis=0)
-    index = np.delete(index, indeces, axis=0)
+        # Smooth position (x, y, z)
+        for dim in range(3):
+            action[:, dim] = savgol_filter(action[:, dim], window_length, polyorder)
+        
+        # Smooth Euler angles with wrap-around consideration
+        for dim in range(3, 6):
+            # Convert to complex representation for circular smoothing
+            angles = action[:, dim]
+            complex_angles = np.exp(1j * angles)
+            smoothed_real = savgol_filter(complex_angles.real, window_length, polyorder)
+            smoothed_imag = savgol_filter(complex_angles.imag, window_length, polyorder)
+            action[:, dim] = np.arctan2(smoothed_imag, smoothed_real)
+        
+        # Smooth gripper command
+        action[:, 6] = savgol_filter(action[:, 6], window_length, polyorder)
+        action[:, 6] = np.clip(action[:, 6], 0.0, 1.0)  # Keep gripper in valid range
+    
     # resize originals to match image_0 size
     originals = np.array([cv2.resize(img, (432, 240)) for img in originals])
 
-    print(f"Filtered out: {len(indeces)}")
+    print(f"Removed {len(indeces_to_remove)} frames with large orientation changes, applied polynomial smoothing")
     data ={
         "action": action,
         "image_0": image_0,
@@ -161,7 +208,8 @@ def filter_episode(npz_file):
         "keypoints": keypoints,
         "inpainted": inpainted,
         "original": originals,
-        "indexes": index
+        "indexes": index,
+        "absolute_indexes": absolute_index
     }
     return (
         data
@@ -240,15 +288,21 @@ def invert_keypoints(vitpose_keypoints2d, config):
         # Extract x', y'
         xy_prime = keypoints[..., :2]  # shape (n_i, 21, 2)
 
-        # Inverse resize
-        xy_c = xy_prime.copy()
-        xy_c[..., 0] = (xy_prime[..., 0] / w_resize) * w_crop  # x_c
-        xy_c[..., 1] = (xy_prime[..., 1] / h_resize) * h_crop  # y_c
-
-        # Inverse crop
-        xy_orig = xy_c.copy()
-        xy_orig[..., 0] += x_crop
-        xy_orig[..., 1] += y_crop
+        if config.crop.flag:
+            # Inverse resize
+            xy_c = xy_prime.copy()
+            xy_c[..., 0] = (xy_prime[..., 0] / w_resize) * w_crop  # x_c
+            xy_c[..., 1] = (xy_prime[..., 1] / h_resize) * h_crop  # y_c
+            
+            # Inverse crop
+            xy_orig = xy_c.copy()
+            xy_orig[..., 0] += x_crop
+            xy_orig[..., 1] += y_crop
+        else:
+            # Inverse resize
+            xy_orig = xy_prime.copy()
+            xy_orig[..., 0] = (xy_prime[..., 0] / w_resize) * config.resolution.original_width
+            xy_orig[..., 1] = (xy_prime[..., 1] / h_resize) * config.resolution.original_height
 
         # Recombine with score
         scores = keypoints[..., 2:]  # shape (n_i, 21, 1)

@@ -2,7 +2,7 @@
 
 This module performs offline 3D object tracking by:
 1. Loading RGB and depth data from episodes
-2. Segmenting objects using SAM2 (optional)
+2. Segmenting objects using SAM3
 3. Converting depth to point clouds
 4. Aligning CAD models to observations using ICP
 5. Tracking object pose over time
@@ -18,7 +18,7 @@ COORDINATE FRAMES:
 
 1. CAMERA FRAME
    - Origin: Camera optical center
-   - Axes: Standard camera convention (x right, y down, z forward)
+   - Axes: Standard camera convention
    - Source: Depth sensor intrinsics (orbbec_fx, orbbec_fy, orbbec_cx, orbbec_cy)
    - When: depth_to_point_cloud() converts depth pixels → 3D points
 
@@ -127,20 +127,20 @@ How to use the rotation data:
      The CAD's initial orientation cancels out in this product.
 """
 
+import re
 import cv2
 import numpy as np
 import os
 import torch
 import matplotlib
+from tqdm import tqdm
 matplotlib.use("TKAgg")
 import matplotlib.pyplot as plt
 import open3d as o3d
 import trimesh
-import sieve
 from omegaconf import OmegaConf
 
-from sam2.build_sam import build_sam2_video_predictor
-from utils.sam2utils import search_folder
+from utils.samutils import search_folder
 from utils.depth_utils import load_raw_depth_episode
 from utils.hw_camera import orbbec_fx, orbbec_fy, orbbec_cx, orbbec_cy
 
@@ -152,7 +152,6 @@ class ObjectTracker:
     
     def __init__(self, config):
         self.cfg = config
-        self.centroid_coords = []
         self.camera_intrinsics = {
             'fx': orbbec_fx, 'fy': orbbec_fy,
             'cx': orbbec_cx, 'cy': orbbec_cy
@@ -161,24 +160,6 @@ class ObjectTracker:
             config.CAMERA_TO_ROBOT_TRANSFORM_PATH, allow_pickle=True
         )
         
-    def get_centroid_from_user(self, image):
-        """Display image and get user click for centroid selection."""
-        fig, ax = plt.subplots()
-        ax.imshow(image)
-        plt.title("Click to select centroid")
-        
-        def onclick(event):
-            if event.xdata is not None and event.ydata is not None:
-                self.centroid_coords.append([event.xdata, event.ydata])
-                print(f"Selected centroid: ({event.xdata:.1f}, {event.ydata:.1f})")
-                plt.close()
-        
-        fig.canvas.mpl_connect('button_press_event', onclick)
-        plt.show()
-        
-        if not self.centroid_coords:
-            raise ValueError("No centroid was selected.")
-        return np.array(self.centroid_coords[0], dtype=np.float32)
     
     def depth_to_point_cloud(self, depth_image, mask):
         """Convert depth image to point cloud using camera intrinsics."""
@@ -212,85 +193,80 @@ class ObjectTracker:
         
         return pcd_robot, centroid_robot
     
-    def generate_masks_with_sam2(self, images, temp_dir, predictor_cfg, language_prompt=None):
-        """Generate object masks using SAM2."""
+    def generate_masks_with_sam3(self, images, dataset_indexes, temp_dir, predictor_cfg, language_prompt=None):
+        """Generate object masks using SAM3."""
+        from sam3.model_builder import build_sam3_video_predictor
+        
         os.makedirs(temp_dir, exist_ok=True)
         
         # Save temporary images
-        for idx, img in enumerate(images):
-            cv2.imwrite(os.path.join(temp_dir, f"frame_{idx:04d}.png"), img)
+        for dataset_index, img in zip(dataset_indexes, images):
+            cv2.imwrite(os.path.join(temp_dir, f"Color_{dataset_index}.png"), img)
         
-        # Get centroid from user
-        if language_prompt is not None:
-            print(f"Using language prompt for segmentation: {language_prompt}")
-            # Use SAM2 Sieve pipeline for language-based segmentation
-            sam = sieve.function.get("sieve/text-to-segment")
-            
-            # Create video from frames for sieve processing
-            video_path = os.path.join(temp_dir, "temp_video_for_sieve.mp4")
-            first_frame = images[0]
-            height, width, layers = first_frame.shape
-            frame_size = (width, height)
-            out = cv2.VideoWriter(video_path, cv2.VideoWriter_fourcc(*"mp4v"), 30, frame_size)
-            
-            for idx, img in enumerate(images):
-                frame_path = os.path.join(temp_dir, f"frame_{idx:04d}.png")
-                frame = cv2.imread(frame_path)
-                out.write(frame)
-            out.release()
-            
-            # Run sieve text-to-segment
-            input_video = sieve.File(path=video_path)
-            try:
-                sam_out = sam.run(input_video, language_prompt)
-                # Extract masks and get centroid from first frame
-                from utils.sam2utils import sievesamzip_to_numpy, extract_centroid
-                original_masks = sievesamzip_to_numpy(sam_out)
-                centroid_coords = extract_centroid(original_masks[0])
-                
-                if centroid_coords is None:
-                    raise ValueError(f"Failed to segment object with prompt: '{language_prompt}'")
-                
-                centroid = np.array(centroid_coords, dtype=np.float32)
-                print(f"Extracted centroid from language prompt: ({centroid[0]:.1f}, {centroid[1]:.1f})")
-            except Exception:
-                centroid = self.get_centroid_from_user(images[0])
-        else:
-            centroid = self.get_centroid_from_user(images[0])
+        print(f"Initializing SAM3 video predictor...")
+        video_predictor = build_sam3_video_predictor()
         
-        # Run SAM2
-        predictor = build_sam2_video_predictor(
-            predictor_cfg.model_cfg, predictor_cfg.sam2_checkpoint, device=device
+        # Start SAM3 session
+        print(f"Starting SAM3 session with video path: {temp_dir}")
+        response = video_predictor.handle_request(
+            request=dict(
+                type="start_session",
+                resource_path=temp_dir
+            )
         )
-        inference_state = predictor.init_state(video_path=temp_dir)
-        predictor.reset_state(inference_state)
+        session_id = response["session_id"]
+        print(f"Session started with ID: {session_id}")
         
-        points = np.array([[centroid[0], centroid[1]]], dtype=np.float32)
-        predictor.add_new_points_or_box(
-            inference_state=inference_state,
-            frame_idx=0,
-            obj_id=1,
-            points=points,
-            labels=np.array([1], np.int32)
+        # Add text prompt (use language_prompt if provided, otherwise default)
+        text_prompt = language_prompt if language_prompt is not None else "object"
+        print(f"Adding text prompt '{text_prompt}' at frame 0")
+        response = video_predictor.handle_request(
+            request=dict(
+                type="add_prompt",
+                session_id=session_id,
+                frame_index=0,
+                text=text_prompt,
+            )
         )
         
+        print("SAM3 propagating masks through video...")
+        
+        # Propagate masks through all frames
+        outputs_per_frame = {}
+        for response in video_predictor.handle_stream_request(
+            request=dict(
+                type="propagate_in_video",
+                session_id=session_id,
+            )
+        ):
+            outputs_per_frame[response["frame_index"]] = response["outputs"]
+                
+        
+        # Extract masks from outputs
         masks = []
-        for _, out_obj_ids, out_mask_logits in predictor.propagate_in_video(inference_state):
-            for i, _ in enumerate(out_obj_ids):
-                mask = (out_mask_logits[i] > 0.0).cpu().numpy()[0]
-                mask = cv2.cvtColor(mask.astype(np.uint8) * 255, cv2.COLOR_GRAY2RGB)
-                masks.append(mask)
+        for i in range(len(images)):
+            if i in outputs_per_frame and "out_binary_masks" in outputs_per_frame[i] and outputs_per_frame is not []:
+                mask = outputs_per_frame[i]["out_binary_masks"][0]
+                # Convert to uint8 and scale to 0-255
+                mask_img = (mask.astype(np.uint8) * 255)
+                # Convert grayscale to RGB for consistency
+                mask_rgb = cv2.cvtColor(mask_img, cv2.COLOR_GRAY2RGB)
+                masks.append(mask_rgb)
+            else:
+                # Create empty mask if none found
+                empty_mask = np.zeros_like(images[i])
+                masks.append(empty_mask)
+                print(f"Warning: No mask found for frame {i}")
         
-        return np.array(masks)
-    
-    def load_masks(self, mask_dir):
-        """Load pre-existing masks from directory."""
-        mask_paths = sorted(
-            [os.path.join(mask_dir, f) for f in os.listdir(mask_dir) 
-             if f.startswith("mask_") and f.endswith(".png")],
-            key=lambda p: os.path.splitext(os.path.basename(p))[0]
+        # Close SAM3 session
+        video_predictor.handle_request(
+            request=dict(
+                type="close_session",
+                session_id=session_id,
+            )
         )
-        masks = [cv2.imread(path) for path in mask_paths]
+        print(f"SAM3 session ended. Generated {len(masks)} masks")
+        
         return np.array(masks)
     
     def visualize_alignment(self, rgb_image, depth_image, mask, depth_width, depth_height):
@@ -305,8 +281,13 @@ class ObjectTracker:
         rgbd = cv2.addWeighted(rgb_resized, 0.6, depth_colored, 0.4, 0)
         depth_overlay = cv2.addWeighted(depth_colored, 0.6, mask, 0.4, 0)
         
-        comparison = np.hstack([rgb_overlay, rgbd, depth_overlay])
-        cv2.imshow('RGB+Mask | RGB+Depth | Depth+Mask', comparison)
+        # comparison = np.hstack([rgb_overlay, rgbd, depth_overlay])
+        breakpoint()
+        cv2.imshow('RGB+Mask', rgb_overlay)
+        cv2.waitKey(0)
+
+        cv2.imshow('RGB+Depth', rgbd)
+        cv2.imshow('Depth+Mask', depth_overlay)
         print("Press any key to continue...")
         cv2.waitKey(0)
         cv2.destroyAllWindows()
@@ -325,15 +306,14 @@ class ObjectTracker:
             mask_resized = cv2.resize(mask, (depth_width, depth_height),
                                      interpolation=cv2.INTER_NEAREST)
 
-            if i == 0 and rgb_images is not None:
-                self.visualize_alignment(rgb_images[i], depth_img, mask_resized,
-                                       depth_width, depth_height)
+            # if i == 0 and rgb_images is not None:
+            #     self.visualize_alignment(rgb_images[i], depth_img, mask_resized,
+            #                            depth_width, depth_height)
 
-            # Keep in CAMERA FRAME (don't transform to robot yet)
-            pcd_camera, centroid_camera = self.depth_to_point_cloud(depth_img, mask_resized)
+            pcd_camera, pcd_centroid_in_camera = self.depth_to_point_cloud(depth_img, mask_resized) #in camera frame
 
             point_clouds.append(pcd_camera)
-            centroids.append(centroid_camera)
+            centroids.append(pcd_centroid_in_camera)
 
             if i % 10 == 0:
                 print(f"Processed point cloud {i}/{len(depth_images)}")
@@ -367,7 +347,7 @@ class ObjectTracker:
           - cad_pcd: Centered at origin in its own frame
 
         Processing:
-          - ICP performed in CAMERA FRAME (both centered at origin)
+          - ICP performed in CAMERA FRAME (with both source and target centered at origin)
           - Each frame processed INDEPENDENTLY (no temporal tracking)
 
         Output:
@@ -470,7 +450,7 @@ class ObjectTracker:
             results['T_robot_from_cad'].append(T_robot_from_cad)
             results['object_pos_in_camera'].append(centroid_camera)
             results['object_pos_in_robot'].append(pos_robot)
-            results['R_icp_in_centered_space'].append(R_icp)
+            results['R_icp_in_centered_space'].append(R_icp) #(source:cad, target:camera obs)
             results['R_object_in_robot'].append(R_robot)
             results['displacement_from_start'].append(pos_robot - first_pos_robot)
             results['icp_fitness'].append(reg_result.fitness)
@@ -578,7 +558,22 @@ class ObjectTracker:
         plt.close()
         
         print(f"Saved trajectory preview to: {save_path}")
-
+    
+    def load_masks(self,directory):
+        # get all png files from the given directory
+        masks_paths =[]
+        for root, dirs, files in os.walk(os.path.join(directory)):
+            for file in files:
+                if file.startswith("mask_") and file.endswith(".png"):
+                    masks_paths.append(os.path.join(root, file))
+        masks_paths = np.asarray(masks_paths)
+        def natural_key(string_):
+            """Helper to sort strings like humans expect."""
+            return [int(text) if text.isdigit() else text.lower() for text in re.split('(\d+)', string_)]
+        masks_paths = sorted(masks_paths, key=natural_key)  # <--- natural sort
+        print(masks_paths)
+        masks = [cv2.imread(p) for p in tqdm(masks_paths, desc="reading images")]
+        return masks
 
 
 def main():
@@ -586,107 +581,104 @@ def main():
     # Load configurations
     OmegaConf.register_new_resolver("phantom-touch", 
                                    lambda: search_folder("/home", "phantom-touch"))
-    
     current_dir = os.path.dirname(os.path.abspath(__file__))
     repo_dir = search_folder("/home", "phantom-touch")
-    
-    cfg = OmegaConf.load(f"{current_dir}/cfg/threeD_tracking_offline.yaml")
+    threed_cfg = OmegaConf.load(f"{current_dir}/cfg/threeD_tracking_offline.yaml")
     paths_cfg = OmegaConf.load(f"{repo_dir}/cfg/paths.yaml")
     
     # Initialize tracker
-    tracker = ObjectTracker(cfg)
+    tracker = ObjectTracker(threed_cfg)
     
     # Generate episode paths
     episodes = [
         f"{paths_cfg.dataset_directory}/e{i}/{paths_cfg.metadata.experiment_name}_e{i}.{paths_cfg.metadata.dataset_format}"
-        for i in range(cfg.start_episode, cfg.end_episode + 1)
+        for i in range(threed_cfg.start_episode, threed_cfg.end_episode + 1)
     ]
     
     # Process each episode
     for episode_idx, episode_path in enumerate(episodes):
-        episode_num = episode_idx + cfg.start_episode
+        episode_num = episode_idx + threed_cfg.start_episode
         print(f"\n{'='*60}\nProcessing Episode {episode_num}\n{'='*60}")
-        
         try:
             episode_data = np.load(episode_path)
-            # if episode is empty, skip
-            if episode_data['image_0'].shape[0] == 0:
+            if episode_data['image_0'].shape[0] < 10: # skip short episodes
                 print(f"Episode {episode_num} is empty, skipping...")
                 continue
-            depth_images = load_raw_depth_episode(
-                paths_cfg.recordings_directory, episode_num, tuple(cfg.depth_shape)
+            depth_images_per_episode = load_raw_depth_episode(
+                paths_cfg.recordings_directory, episode_num, tuple(threed_cfg.depth_shape)
             )
-            depth_images = depth_images[episode_data['indexes']]
-            print(f"Loaded {len(depth_images)} depth frames after applying epsisode filter from the dataset")
+            depth_images_per_episode = depth_images_per_episode[episode_data['indexes']] # remove filtered episode frames
+            print(f"Loaded {len(depth_images_per_episode)} depth frames after applying epsisode filter from the dataset")
         except FileNotFoundError:
             print(f"File not found: {episode_path}")
             continue
         
-        if len(episode_data["image_0"]) < 10:
-            print(f"Episode has less than 10 frames, skipping...")
-            continue
-        
-        rgb_images = episode_data["original"]
+        # prepare for object segmentation per episode
+        rgb_images_per_episode = episode_data["original"]
+        dataset_indexes_per_episode = episode_data['absolute_indexes']
         temp_dir = os.path.join(paths_cfg.dataset_directory, "temporary_images_extraction", f"e{episode_num}")
-        
         # Clean temp directory for this episode if it exists
         if os.path.exists(temp_dir):
             import shutil
             shutil.rmtree(temp_dir)
         os.makedirs(temp_dir, exist_ok=True)
         
-        # Get or generate masks
-        if cfg.mask_objects:
-            # generate masks instead with the same2 sieve
-            masks = tracker.generate_masks_with_sam2(
-                rgb_images, temp_dir, cfg.sam2videoPredictor,
+        # Generate masks with SAM3 using text prompt
+        if threed_cfg.mask_objects:
+            language_prompt = threed_cfg.get('language_prompt', default_value='object')
+            masks_per_episode = tracker.generate_masks_with_sam3(
+                rgb_images_per_episode, dataset_indexes_per_episode,temp_dir, threed_cfg.get('sam3videoPredictor', {}),
+                language_prompt=language_prompt
             )
             # Save masks in episode-specific folder
             episode_mask_dir = os.path.join(paths_cfg.object_masks_dir, f"e{episode_num}")
             os.makedirs(episode_mask_dir, exist_ok=True)
-            for i, mask in enumerate(masks):
+            for dataset_index, mask in zip(dataset_indexes_per_episode, masks_per_episode):
                 cv2.imwrite(
-                    os.path.join(episode_mask_dir, f"mask_frame_{i:04d}.png"),
+                    os.path.join(episode_mask_dir, f"mask_frame_{dataset_index}.png"),
                     mask
                 )
-            print(f"Saved {len(masks)} masks to {episode_mask_dir}")
+            print(f"Saved {len(masks_per_episode)} masks to {episode_mask_dir}")
+        ############################################################################################
         
-        if cfg.load_masks:
+        
+        ### second phase: object pose tracking
+        # load saved masks
+        if threed_cfg.load_masks:
             episode_mask_dir = os.path.join(paths_cfg.object_masks_dir, f"e{episode_num}")
             print(f"Loading masks from {episode_mask_dir}...")
-            masks = tracker.load_masks(episode_mask_dir)
-            print(f"Loaded {len(masks)} masks")
+            masks_per_episode = tracker.load_masks(episode_mask_dir)
+            print(f"Loaded {len(masks_per_episode)} masks")
         
         # Process point clouds
         print("\nConverting depth to point clouds...")
-        point_clouds, centroids = tracker.process_point_clouds(
-            depth_images, masks, rgb_images
+        point_clouds_in_camera, centroids_in_camera = tracker.process_point_clouds(
+            depth_images_per_episode, masks_per_episode, rgb_images_per_episode
         )
-        
         # Load CAD model
-        print(f"\nLoading CAD model from {cfg.CAD_MODEL_PATH}...")
+        print(f"\nLoading CAD model from {threed_cfg.CAD_MODEL_PATH}...")
         cad_pcd, cad_mesh = tracker.load_cad_model(
-            cfg.CAD_MODEL_PATH, 
-            num_samples=cfg.get('cad_sample_points', 10000),
-            scale=cfg.get('cad_scale', 0.001)
+            threed_cfg.CAD_MODEL_PATH, 
+            num_samples=threed_cfg.get('cad_sample_points', 10000),
+            scale=threed_cfg.get('cad_scale', 0.001)
         )
         print(f"CAD model loaded with {len(cad_mesh.vertices)} vertices")
         
         # Align with ICP
-        icp_cfg = cfg.get('icp', {})
+        icp_cfg = threed_cfg.get('icp', {})
         results = tracker.align_with_icp(
-            point_clouds, centroids, cad_pcd,
+            point_clouds_in_camera, centroids_in_camera, cad_pcd,
             voxel_size=icp_cfg.get('voxel_size', 0.005)
         )
         
         # Store total frames for metadata
-        results['total_frames'] = len(point_clouds)
+        results['total_frames'] = len(point_clouds_in_camera)
         
         # Save results
         cad_info = {
-            'model_path': cfg.CAD_MODEL_PATH,
-            'sample_points': cfg.get('cad_sample_points', 10000),
-            'scale': cfg.get('cad_scale', 0.001)
+            'model_path': threed_cfg.CAD_MODEL_PATH,
+            'sample_points': threed_cfg.get('cad_sample_points', 10000),
+            'scale': threed_cfg.get('cad_scale', 0.001)
         }
 
         tracker.save_results(results, cad_info, paths_cfg.threeD_tracking_output_dir, episode_num)

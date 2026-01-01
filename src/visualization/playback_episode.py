@@ -4,24 +4,24 @@ import numpy as np
 from omegaconf import OmegaConf
 import os
 
-from utils.sam2utils import search_folder
+from utils.samutils import search_folder
 repo_dir = search_folder(f"/home/{os.getenv('USER')}/", "phantom-touch")
-def overlay_images(mujoco_image, inpainted_image):
+def overlay_images(mujoco_image, image_to_overlay):
     # Convert images to float32 and normalize to [0, 1]
     mujoco_image = mujoco_image.astype(np.float32) / 255.0
-    inpainted_image = inpainted_image.astype(np.float32) / 255.0
+    image_to_overlay = image_to_overlay.astype(np.float32) / 255.0
 
     # Create alpha channel for mujoco image based on white background
     white_background = np.ones_like(mujoco_image)
     diff = np.abs(mujoco_image - white_background)
-    alpha_channel = 1.0 - np.clip(np.max(diff, axis=2, keepdims=True) * 5.0, 0, 1)
+    alpha_channel = 1.0 - np.clip(np.max(diff, axis=2, keepdims=True) * 3, 0, 1)
 
     # Add alpha channel to mujoco image
     mujoco_image_with_alpha = np.concatenate((mujoco_image, alpha_channel), axis=2)
 
     # Add full opacity alpha channel to inpainted image
     color_image_with_alpha = np.concatenate(
-        (inpainted_image, np.ones((*inpainted_image.shape[:2], 1), dtype=np.float32)), axis=2
+        (image_to_overlay, np.ones((*image_to_overlay.shape[:2], 1), dtype=np.float32)), axis=2
     )
     # Perform the overlay operation
     overlayed_image = (
@@ -46,8 +46,8 @@ if __name__ == "__main__":
         except FileNotFoundError:
             print(f"File not found: {episode}")
             continue
-        if len(data["image_0"]) < 10:
-            print(f"Episode {episode} {j} has less than 10 frames, length: {len(data['image_0'])}, skipping...")
+        if len(data["image_0"]) < 2:
+            print(f"Episode {episode} {j} has less than 2 frames, length: {len(data['image_0'])}, skipping...")
             continue
         else:
             print(f"Loaded episode {episode} {j} with {len(data['image_0'])} frames.")
@@ -58,8 +58,9 @@ if __name__ == "__main__":
 
             cv2.imshow(f"data image_e{j}", data_image)
             cv2.imshow("overlayed_data_image_on_original", overlayed)
+            cv2.imshow("original",data["original"][i])
             # cv2.imshow(f"original_e{j}", data["original"][i])
             if i == len(data["image_0"])//2:
                 cv2.imwrite("data_image_and_original.png", np.vstack((data_image, data["original"][i])))
                 cv2.imwrite("overlayed_data_image_on_original.png", overlayed)
-            cv2.waitKey(1000)
+            cv2.waitKey(10)

@@ -10,17 +10,18 @@ from utils.phantomutils import calculate_action, filter_episode, invert_keypoint
 from omegaconf import OmegaConf
 import os
 from utils.rgb_utils import load_rgb_images
-from rcsss.envs.base import ControlMode
-from rcsss.envs.factories import fr3_sim_env
 import logging
-from rcsss.envs.utils import (
-    default_fr3_sim_gripper_cfg,
-    default_fr3_sim_robot_cfg,
-    default_mujoco_cameraset_cfg,
+import mujoco
+
+from utils.samutils import search_folder
+from utils.mujoco_utils import (
+    initialize_mujoco_sim,
+    solve_ik,
+    get_robot_state,
+    set_gripper,
+    render_camera
 )
-
-from utils.sam2utils import search_folder
-
+#TODO: revise gripper actions and review script
 if __name__ == "__main__":
     # load config
     parent_directory = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -30,21 +31,20 @@ if __name__ == "__main__":
     dataset_root = paths_cfg.dataset_output_directory
     recordings_root = paths_cfg.recordings_directory
     vitpose_root = paths_cfg.vitpose_output_directory
-    sam2hand_root = paths_cfg.sam2hand_directory
+    sam3hand_root = paths_cfg.sam3hand_directory
     inpainting_root = paths_cfg.inpainting_directory
     experiment_name = paths_cfg.metadata.experiment_name
 
     # Configure logger
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
-    env = fr3_sim_env(
-        control_mode=ControlMode.CARTESIAN_TRPY,
-        robot_cfg=default_fr3_sim_robot_cfg(),
-        collision_guard=False,
-        gripper_cfg=default_fr3_sim_gripper_cfg(),
-        camera_set_cfg=default_mujoco_cameraset_cfg(),
-    )
-    obs, _ = env.reset()
+    
+    # Initialize MuJoCo simulation environment
+    scene_path = f"{repo_dir}/data/fr3_simple_pick_up_digit_hand_wsensor/scene.xml"
+    tcp_offset = phantom_config.tcp_offset  # Measured distance from tcp_0(flange) to gripper center for IK in MuJoCo scene
+    (model, mj_data, ee_site_id, gripper_actuator_id, 
+     finger_joint1_id, finger_joint2_id, camera_id, renderer) = initialize_mujoco_sim(scene_path)
+    
     for ep in range(phantom_config.episode_number.start, phantom_config.episode_number.end + 1):
         recordings_root = os.path.join(
             paths_cfg.recordings_directory, f"e{ep}"
@@ -52,8 +52,8 @@ if __name__ == "__main__":
         vitpose_root = os.path.join(
             paths_cfg.vitpose_output_directory, f"e{ep}"
         )
-        sam2hand_root = os.path.join(
-            paths_cfg.sam2hand_directory, f"e{ep}"
+        sam3hand_root = os.path.join(
+            paths_cfg.sam3hand_directory, f"e{ep}"
         )
         inpainting_root = os.path.join(
             paths_cfg.inpainting_directory, f"e{ep}"
@@ -72,7 +72,7 @@ if __name__ == "__main__":
             recordings_root, shape=[numpy_color.shape[1], numpy_color.shape[2]]
         )
 
-        sam2_pcds, sam2_pcd_paths = load_pcds(sam2hand_root, prefix="Color_", return_path=True)
+        sam3_pcds, sam3_pcd_paths = load_pcds(sam3hand_root, prefix="Color_", return_path=True)
 
         extrinsic = np.load(
             f"{repo_dir}/src/cameras/Orbbec/data/robotbase_camera_transform_orbbec_fr4.npy"
@@ -84,12 +84,14 @@ if __name__ == "__main__":
             vitpose_keypoints2d
         ), "Number of keypoints files and depth images do not match"
 
-
+        assert numpy_depth.shape[0] == len(
+            sam3_pcds
+        ), "Number of sam3 pcds and depth images do not match"
         logger.info(
             f"Loaded {numpy_depth.shape} frames of depth images, \
             {numpy_color.shape} frames of color images, \
             {len(vitpose_keypoints2d)} files of keypoints, \
-            {len(sam2_pcds)} sam segmented pcds, and \
+            {len(sam3_pcds)} sam segmented pcds, and \
             {inpainted_images.shape} inpainted images"
         )
 
@@ -101,16 +103,18 @@ if __name__ == "__main__":
         states_per_episode = []
         inpainted_images_per_episode = []
         originals_per_episode = []
-        indexes_per_episode = []
-        previous_episode = os.path.basename(os.path.dirname(color_paths[0]))
+        relative_indexes_per_episode = []
+        absolute_indexes_per_episode = []
 
+        previous_episode = os.path.basename(os.path.dirname(color_paths[0]))
+        
         # start data generation
         for idx, (
             depth_map,
             color_frame,
             color_path,
             keypoints_per_frame,
-            sam2_pcd,
+            sam3_pcd,
             inpainted,
         ) in tqdm(
             enumerate(
@@ -119,7 +123,7 @@ if __name__ == "__main__":
                     numpy_color,
                     color_paths,
                     vitpose_keypoints2d,
-                    sam2_pcds,
+                    sam3_pcds,
                     inpainted_images,
                 ),
             ),
@@ -133,7 +137,7 @@ if __name__ == "__main__":
                 numpy_depth.shape[0],
                 numpy_color.shape[0],
                 len(vitpose_keypoints2d),
-                len(sam2_pcds),
+                len(sam3_pcds),
             )
             if idx == last_index - 1:
                 # discard the last image
@@ -143,7 +147,8 @@ if __name__ == "__main__":
                 keypoints_per_episode = keypoints_per_episode[:-1]
                 states_per_episode = states_per_episode[:-1]
                 actions_per_episode = actions_per_episode[1:]
-                indexes_per_episode = indexes_per_episode[:-1]
+                relative_indexes_per_episode = relative_indexes_per_episode[:-1]
+                absolute_indexes_per_episode = absolute_indexes_per_episode[:-1]
                 data = {
                     "action": actions_per_episode,
                     "image_0": images_per_episode,
@@ -151,7 +156,8 @@ if __name__ == "__main__":
                     "keypoints": keypoints_per_episode,
                     "inpainted": inpainted_images_per_episode,
                     "original": originals_per_episode,
-                    "indexes": indexes_per_episode
+                    "indexes": relative_indexes_per_episode,
+                    "absolute_indexes": absolute_indexes_per_episode
                 }
                 print(f"Saving episode {previous_episode} with {len(data['action'])} frames")
                 data = filter_episode(data)
@@ -166,66 +172,110 @@ if __name__ == "__main__":
                     inpainted=data["inpainted"],
                     original=data["original"],
                     indexes=data["indexes"],
+                    absolute_indexes=data["absolute_indexes"]
                 )
-                env.reset()
+                mujoco.mj_resetData(model, mj_data)
+                mujoco.mj_forward(model, mj_data)
                 break
-
-            sam2_pcd = sam2_pcd[0]  # squeeze
+                        
             chamfer_distances = []
             target_actions_per_frame = []
             pcds_per_frame = []
-            invalid_keypoint = (
-                False  # ignore frames with one or more hands with bad depth values
-            )
+            invalid_keypoint = False  # ignore frames with one or more hands with bad depth values
             for i, keypoints2d in enumerate(keypoints_per_frame):
                 keypoints2d = keypoints2d[:, :2].astype(int)
                 if (
                     keypoints2d[:, 0].max() >= depth_map.shape[1]
                     or keypoints2d[:, 1].max() >= depth_map.shape[0]
                 ):
-                    invalid_keypoint = True
+                    # clip out-of-bounds keypoints
+                    # keypoints2d[:, 0] = np.clip(keypoints2d[:, 0], 0, depth_map.shape[1] - 1)
+                    # keypoints2d[:, 1] = np.clip(keypoints2d[:, 1], 0, depth_map.shape[0] - 1)
+                    print(f"Frame {frame_index}: Keypoints out of bounds, skipping frame.")
                     continue
-                depth_keypoints_map = depth_map
-                depth_keypoints_map[keypoints2d[:, 1], keypoints2d[:, 0]] = depth_map[
-                    keypoints2d[:, 1], keypoints2d[:, 0]
-                ]
                 # project the keypoints to 3D camera coordinates
                 points = np.zeros((len(keypoints2d), 3))
                 colors = np.zeros((len(keypoints2d), 3))
                 for j, (x, y) in enumerate(keypoints2d):
                     z = depth_map[y, x]
-                    if j in {4, 8}:
+                    if j in {4, 8}:  # Thumb tip and index tip
                         if z <= 250 or z >= 5000:
                             invalid_keypoint = True
-                    else:
-                        colors[j] = [1, 1, 1]
+                            break
+                    colors[j] = [1, 0, 0]
                     points[j] = [x, y, z]
                 if invalid_keypoint:
-                    print("Invalid keypoint detected, skipping frame.")
+                    print(f"Frame {frame_index}: Invalid keypoint detected with depth {z}, skipping frame.")
                     continue
-                invalid_keypoint = False
+                
+                # Convert to 3D camera coordinates
                 points[:, 0] = (points[:, 0] - orbbec_cx) * points[:, 2] / orbbec_fx / 1000.0
                 points[:, 1] = (points[:, 1] - orbbec_cy) * points[:, 2] / orbbec_fy / 1000.0
                 points[:, 2] = points[:, 2] / 1000.0
+                
                 pcd = o3d.geometry.PointCloud()
-                pcd.points = o3d.utility.Vector3dVector(points)
-                pcd.colors = o3d.utility.Vector3dVector(colors)
+                pcd.points = o3d.utility.Vector3dVector(points[[4,8], :])
+                pcd.colors = o3d.utility.Vector3dVector(colors[[4,8], :])
                 pcds_per_frame.append(pcd)
-
-                sam2_pcd = sam2_pcd.voxel_down_sample(voxel_size=0.01)
-                chamfer_distance = pcd.compute_point_cloud_distance(sam2_pcd)
+                if isinstance(sam3_pcd, np.ndarray):
+                    sam3_pcd=sam3_pcd[0]
+                else:
+                    sam3_pcd = sam3_pcd
+                sam3_pcd = sam3_pcd.voxel_down_sample(voxel_size=0.01)
+                chamfer_distance = pcd.compute_point_cloud_distance(sam3_pcd)
                 chamfer_distance = np.asarray(chamfer_distance)
                 chamfer_distance = np.mean(chamfer_distance)
                 chamfer_distances.append(chamfer_distance)
 
                 action = calculate_action(points, extrinsic)
                 target_actions_per_frame.append(action)
+                invalid_keypoint = False
+
 
             if len(chamfer_distances) == 0:
-                print("No valid keypoints detected, skipping frame.")
+                print(f"Frame {frame_index}: No valid keypoints detected, skipping frame.")
                 continue
-            elif min(chamfer_distances) > 0.005:
-                print("No good matching keypoints, skipping frame, the min chamfer distance is ", min(chamfer_distances))
+            elif min(chamfer_distances) > phantom_config.chamfer_distance_threshold:
+
+                print(f"Frame {frame_index}: No good matching keypoints, skipping frame, the min chamfer distance is {min(chamfer_distances)}")
+                
+                # # Visualize thumb tip and index tip on sam3 pcd for debugging
+                # min_chamfer_index_debug = chamfer_distances.index(min(chamfer_distances))
+                # pcd_debug = pcds_per_frame[min_chamfer_index_debug]
+                # keypoints_3d_debug = np.asarray(pcd_debug.points)
+                
+                # # Extract thumb tip (index 4) and index tip (index 8)
+                # thumb_tip = keypoints_3d_debug[4]
+                # index_tip = keypoints_3d_debug[8]
+                
+                # # Create spheres for visualization
+                # thumb_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.01)
+                # thumb_sphere.translate(thumb_tip)
+                # thumb_sphere.paint_uniform_color([1, 0, 0])  # Red for thumb
+                
+                # index_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=0.01)
+                # index_sphere.translate(index_tip)
+                # index_sphere.paint_uniform_color([0, 1, 0])  # Green for index
+                
+                # # Color the sam3_pcd for better visualization
+                # sam3_pcd.paint_uniform_color([0.5, 0.5, 0.5])  # Gray
+                
+                # # Visualize all keypoints in blue
+                # all_keypoints_pcd = o3d.geometry.PointCloud()
+                # all_keypoints_pcd.points = o3d.utility.Vector3dVector(keypoints_3d_debug)
+                # all_keypoints_pcd.paint_uniform_color([0, 0, 1])  # Blue
+                
+                # print(f"Thumb tip 3D: {thumb_tip}")
+                # print(f"Index tip 3D: {index_tip}")
+                # print(f"Visualizing frame {idx} with chamfer distance: {min(chamfer_distances):.4f}")
+                
+                # # Display the 3D scene
+                # o3d.visualization.draw_geometries(
+                #     [sam3_pcd, thumb_sphere, index_sphere, all_keypoints_pcd],
+                #     window_name=f"Frame {idx} - Chamfer: {min(chamfer_distances):.4f}",
+                #     width=1024, height=768
+                # )
+                
                 continue
             min_chamfer_distance = min(chamfer_distances)
             min_chamfer_index = chamfer_distances.index(min_chamfer_distance)
@@ -233,34 +283,44 @@ if __name__ == "__main__":
             action = target_actions_per_frame[min_chamfer_index]
             pcd = pcds_per_frame[min_chamfer_index]
 
-            keypoints = np.asarray(pcd.points)
+            keypoints = np.asarray(points)
 
-            act = {
-                "xyzrpy": [
-                    action[0],
-                    action[1],
-                    action[2],
-                    action[3],
-                    action[4],
-                    action[5],
-                ],
-                "gripper": action[6],
-            }
-            obs, _, _, _, _ = env.step(act)
-            if not env.get_wrapper_attr("robot").get_state().ik_success:
-                continue
-            joint_state = env.get_wrapper_attr("robot").get_joint_position()
-            position_state = env.get_wrapper_attr("robot").get_cartesian_position().xyzrpy()
-            gripper_state = obs["gripper"]
-            state = np.concatenate(
-                (
-                    joint_state.flatten(),
-                    position_state.flatten(),
-                    np.array([gripper_state]).flatten(),
-                )
+            # Extract target pose from action
+            target_pos = action[:3]
+            target_rpy = action[3:6]
+            gripper_value = action[6]
+            
+            # Store initial configuration for potential reset
+            initial_qpos = mj_data.qpos[:7].copy()
+            
+            # Solve inverse kinematics
+            ik_success, pos_err, tool_center_pos, tool_center_rpy = solve_ik(
+                model, mj_data, ee_site_id, 
+                target_pos, target_rpy,
+                tcp_offset=tcp_offset,
+                alpha=0.3, tol=0.02, max_iter=200, reg=1e-3,
+                verbose=False
             )
-            sim_image = obs["frames"]["orbbec"]["rgb"]
-            # show inpainted image
+            
+            if not ik_success:
+                print(f"\nIK failed for frame {idx}: pos_err={pos_err:.4f}m")
+                print(f"  Target: {target_pos}, RPY: {target_rpy}")
+                mj_data.qpos[:7] = initial_qpos
+                continue
+            
+            # Set gripper position
+            set_gripper(model, mj_data, finger_joint1_id, finger_joint2_id, gripper_value)
+            
+            # Step simulation multiple times to let actuator respond
+            # for _ in range(100):
+            #     mujoco.mj_step(model, mj_data)
+            
+            # Get robot state
+            state = get_robot_state(model, mj_data, ee_site_id, finger_joint1_id)
+            
+            # Render camera image
+            sim_image = render_camera(renderer, mj_data, camera_id)
+            
             overlayed_image = overlay_image(
                 inpainted, sim_image, (inpainted.shape[1], inpainted.shape[0])
             )
@@ -270,6 +330,7 @@ if __name__ == "__main__":
             keypoints_per_episode.append(keypoints)
             inpainted_images_per_episode.append(inpainted)
             originals_per_episode.append(color_frame)
-            indexes_per_episode.append(idx)
+            relative_indexes_per_episode.append(idx)
+            absolute_indexes_per_episode.append(frame_index)
 
         print("Batch processing complete.")

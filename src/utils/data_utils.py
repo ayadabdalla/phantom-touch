@@ -73,6 +73,9 @@ def load_pcds(base_dir, prefix="Color_", return_path=False):
     pcds = []
     for pcd_path in tqdm(sorted_pcd_paths, desc="reading PCD files"):
         pcd = o3d.io.read_point_cloud(pcd_path)
+        if len(pcd.points) == 0:
+            print(f"Warning: PCD file {pcd_path} is empty.")
+            continue
         pcds.append(pcd)
     pcds = np.stack(pcds, axis=0)  # Shape: (num_views, ...)
     pcds = np.reshape(pcds, (pcds.shape[0], 1))

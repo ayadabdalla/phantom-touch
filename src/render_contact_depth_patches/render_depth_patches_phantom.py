@@ -264,7 +264,7 @@ def render_depth_patches(cfg):
 
     # Load trajectories
     logging.info(f"Loading phantom-touch data from: {cfg.PHANTOM_DATASET_ROOT}")
-    episode_num = cfg.get('EPISODE_NUMBER', 1)
+    episode_num = cfg.get('EPISODE_NUMBER', 0)
     fitness_threshold = cfg.get('FITNESS_THRESHOLD', 0.0)
 
     obj_positions, obj_orientations, frame_indices = load_phantom_object_trajectory(

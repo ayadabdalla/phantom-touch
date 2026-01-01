@@ -3,7 +3,7 @@ import numpy as np
 from omegaconf import OmegaConf
 import os
 
-from utils.sam2utils import search_folder
+from utils.samutils import search_folder
 
 def load_simple_images(image_paths):
     """Load a list of images from given file paths.

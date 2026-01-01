@@ -7,7 +7,7 @@ import json
 import shutil
 import re
 from tqdm import tqdm
-from utils.sam2utils import search_folder
+from utils.samutils import search_folder
 
 
 repo_dir = search_folder("/home", "phantom-touch")

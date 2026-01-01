@@ -1,5 +1,0 @@
-sam2videoPredictor:
-  video_frames_dir: /home/epon04yc/ontouch/data/recordings/pick_and_place/extracted_recording_1753781977/rs_d435_color_images
-  output_dir: /home/epon04yc/ontouch/data/recordings/pick_and_place/extracted_recording_1753781977/sam2-vid_output/rs_d435
-  sam2_checkpoint: /mnt/dataset_drive/ayad/phantom-touch/models/sam2/checkpoints/sam2.1_hiera_large.pt
-  model_cfg: configs/sam2.1/sam2.1_hiera_l.yaml # relative to sam2

@@ -1,7 +1,7 @@
 import sys
 import cv2
 import os
-from utils.sam2utils import search_folder
+from utils.samutils import search_folder
 
 def extract_frames(video_path, output_folder):
     if not os.path.exists(output_folder):

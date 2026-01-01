@@ -1,15 +1,14 @@
 metadata:
   repo_dir: ${phantom-touch:}
-  # data_dir: /mnt/dataset_drive/ayad/data/phantom-touch
   data_dir: /home/epon04yc
   model_dir: /mnt/dataset_drive/ayad/data/phantom-touch
-  experiment_name: experiment_0
+  experiment_name: example_5
   dataset_format: npz
 
-masks_directory: ${metadata.data_dir}/${metadata.experiment_name}/sam2-vid_output/episodes/
+masks_directory: ${metadata.data_dir}/${metadata.experiment_name}/sam3_output/episodes/
 trajectory_directory: ${metadata.data_dir}/${metadata.experiment_name}/trajectories
 recordings_directory: ${metadata.data_dir}/${metadata.experiment_name}/episodes
-sam2hand_directory: ${metadata.data_dir}/${metadata.experiment_name}/sam2hand_output/episodes
+sam3hand_directory: ${metadata.data_dir}/${metadata.experiment_name}/sam3hand_output/episodes
 hamer_output_directory: ${metadata.data_dir}/${metadata.experiment_name}/hamer_output/episodes
 vitpose_output_directory: ${metadata.data_dir}/${metadata.experiment_name}/vitpose_output/episodes
 dataset_directory: ${metadata.data_dir}/${metadata.experiment_name}/dataset

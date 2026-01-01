@@ -76,20 +76,12 @@ for pkg in "${PACKAGES[@]}"; do
     fi
 done
 
-# Check 5: SAM2 installation
-print_check "Checking SAM2..."
-if python -c "from sam2.build_sam import build_sam2_video_predictor" 2>/dev/null; then
-    print_pass "SAM2 installed and importable"
+# Check 5: SAM3 installation
+print_check "Checking SAM3..."
+if python -c "from sam3.build_sam import build_sam3_video_predictor" 2>/dev/null; then
+    print_pass "SAM3 installed and importable"
 else
-    print_fail "SAM2 not properly installed"
-fi
-
-# Check 6: SIEVE API key
-print_check "Checking SIEVE API key..."
-if [[ -n "${SIEVE_API_KEY:-}" ]]; then
-    print_pass "SIEVE_API_KEY is set"
-else
-    print_warn "SIEVE_API_KEY not set (required for SAM2 segmentation)"
+    print_fail "SAM3 not properly installed"
 fi
 
 # Check 7: Config files exist
@@ -98,7 +90,7 @@ CONFIGS=(
     "cfg/paths.yaml"
     "src/segment_hands/cfg/vitpose_segmentation.yaml"
     "src/phantom_touch/cfg/preprocessors.yaml"
-    "src/sam2/cfg/sam2_object_by_text.yaml"
+    "src/sam3_session/cfg/sam3_object_by_text.yaml"
     "src/segment_hands/cfg/3d_projection.yaml"
     "src/inpainting/cfg/inpaint.yaml"
     "src/render_contact_depth_patches/threeDoffline_object_tracking/cfg/threeD_tracking_offline.yaml"

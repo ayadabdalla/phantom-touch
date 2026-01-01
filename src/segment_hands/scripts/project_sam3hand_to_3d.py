@@ -8,7 +8,7 @@ from utils.hw_camera import orbbec_cx, orbbec_cy, orbbec_fx, orbbec_fy
 from utils.depth_utils import load_raw_depth_images
 from omegaconf import OmegaConf
 from utils.rgb_utils import load_rgb_images
-from utils.sam2utils import search_folder
+from utils.samutils import search_folder
 
 
 if __name__ == "__main__":
@@ -22,7 +22,7 @@ if __name__ == "__main__":
 
     rgb_directory_path = paths_cfg.recordings_directory
     masks_directory_path = paths_cfg.masks_directory
-    output_directory_path = paths_cfg.sam2hand_directory
+    output_directory_path = paths_cfg.sam3hand_directory
     shape = threed_conf.shape
 
     # === Load Data ===
@@ -57,8 +57,8 @@ if __name__ == "__main__":
 
         # Set camera intrinsics
         intrinsic = o3d.camera.PinholeCameraIntrinsic()
-        start_x = threed_conf.crop.x
-        start_y = threed_conf.crop.y
+        start_x = threed_conf.crop.x1
+        start_y = threed_conf.crop.y1
         intrinsic.set_intrinsics(width, height, int(orbbec_fx), int(orbbec_fy), int(orbbec_cx - start_x), int(orbbec_cy - start_y))
 
         # Create Open3D RGBD image
@@ -81,11 +81,12 @@ if __name__ == "__main__":
         os.makedirs(episode_output_dir, exist_ok=True)  # Create folder if it doesn't exist
 
         save_path = os.path.join(episode_output_dir, save_name)
-
+        if len(np.asarray(pcd.points)) == 0:
+            pcd.points = o3d.utility.Vector3dVector(np.array([[0.0, 0.0, 0.0]])) # dummy to prevent empty point cloud
         o3d.io.write_point_cloud(save_path, pcd)
 
         # Optional: print after every N saves if you want
         # if idx % 50 == 0:
         #     print(f"Saved: {save_path} with {len(np.asarray(pcd.points))} points")
 
-        print("✅ All point clouds generated!")
+    print("✅ All point clouds generated!")
