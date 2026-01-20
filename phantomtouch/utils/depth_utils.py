@@ -2,7 +2,7 @@ import numpy as np
 import os
 import glob
 
-from utils.rgb_utils import natural_key
+from phantomtouch.utils.rgb_utils import natural_key
 from tqdm import tqdm
 def load_raw_depth_images(base_dir, shape):
     # depth_paths = glob.glob(os.path.join(base_dir, "e*", "RawDepth_*.raw"))

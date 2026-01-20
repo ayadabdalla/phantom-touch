@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="phantom-touch",
+    name="phantomtouch",
     version="0.1.0",
     author="Abdalla Ayad",
     author_email="abdalla.ayad@utn.de",
@@ -9,8 +9,8 @@ setup(
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/ayadabdalla/phantom-touch",
-    packages=find_packages(where="phantom-touch"),
-    package_dir={"": "src"},
+    packages=find_packages(where="."),
+    package_dir={"": "."},
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: MIT License",

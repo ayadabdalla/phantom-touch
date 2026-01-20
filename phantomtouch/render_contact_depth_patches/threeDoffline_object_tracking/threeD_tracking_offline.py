@@ -140,9 +140,9 @@ import open3d as o3d
 import trimesh
 from omegaconf import OmegaConf
 
-from utils.samutils import search_folder
-from utils.depth_utils import load_raw_depth_episode
-from utils.hw_camera import orbbec_fx, orbbec_fy, orbbec_cx, orbbec_cy
+from phantomtouch.utils.samutils import search_folder
+from phantomtouch.utils.depth_utils import load_raw_depth_episode
+from phantomtouch.utils.hw_camera import orbbec_fx, orbbec_fy, orbbec_cx, orbbec_cy
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 

@@ -5,7 +5,7 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import sieve
-from utils.rgb_utils import load_rgb_images
+from phantomtouch.utils.rgb_utils import load_rgb_images
 
 def sievesamzip_to_mp4_video(sam_out, output_path=None):
     """
